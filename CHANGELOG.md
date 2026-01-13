@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.3.0] - 2026-01-13
+
+### Added
+- **ML preprocessing with normalization** - new `resizeForModel()` method returning `Float32List`
+  - `NormalizationType` enum: `none` (default), `simple` [0,1], `centered` [-1,1], `imageNet`, `custom`
+  - `ChannelOrder` enum: `rgb` (default), `bgr`
+  - `TensorLayout` enum: `hwc` (default, TensorFlow), `chw` (PyTorch)
+  - Custom mean/std normalization parameters
+  - Native C pipeline for raw RGB output (no re-encoding overhead)
+
+### Optimized
+- Pre-computed scale/offset factors for normalization (multiply+add instead of divide+subtract+divide)
+- Branch conditions moved outside hot loops for better performance
+
+### Changed
+- Added `machine-learning` topic to pubspec.yaml
+- Updated API documentation with ML preprocessing section
+- Updated README with normalization examples
+
 ## [1.2.3] - 2025-12-18
 
 ### Added
