@@ -18,3 +18,8 @@ set_target_properties(flutter_bicubic_resize PROPERTIES
 target_compile_options(flutter_bicubic_resize PRIVATE
     -fvisibility=hidden
 )
+
+# Android 15 requires 16KB page alignment for native libraries
+target_link_options(flutter_bicubic_resize PRIVATE
+    -Wl,-z,max-page-size=16384
+)
