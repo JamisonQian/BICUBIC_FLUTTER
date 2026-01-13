@@ -167,6 +167,39 @@ FFI_EXPORT int bicubic_resize_png(
 );
 
 // ============================================================================
+// Raw RGB output (for ML preprocessing)
+// ============================================================================
+
+// Decode and resize image to raw RGB bytes (no re-encoding)
+// This is optimized for ML preprocessing where you need raw pixels
+// filter: 0=Catmull-Rom (default), 1=Cubic B-Spline, 2=Mitchell
+// edge_mode: 0=clamp (default), 1=wrap, 2=reflect, 3=zero
+// crop: crop factor (0.0-1.0), 1.0 = no crop, 0.5 = 50%
+// crop_anchor: 0=center (default), 1-8 = other positions
+// aspect_mode: 0=square (default), 1=original, 2=custom
+// aspect_w, aspect_h: custom aspect ratio (only used if aspect_mode=2)
+// apply_exif: 1=apply EXIF orientation (JPEG only), 0=ignore EXIF
+// is_jpeg: 1=input is JPEG, 0=input is PNG
+// Returns 0 on success, -1 on error
+FFI_EXPORT int bicubic_resize_to_rgb(
+    const uint8_t* input_data,
+    int input_size,
+    int output_width,
+    int output_height,
+    int filter,
+    int edge_mode,
+    float crop,
+    int crop_anchor,
+    int aspect_mode,
+    float aspect_w,
+    float aspect_h,
+    int apply_exif,
+    int is_jpeg,
+    uint8_t** output_data,
+    int* output_size
+);
+
+// ============================================================================
 // Memory management
 // ============================================================================
 

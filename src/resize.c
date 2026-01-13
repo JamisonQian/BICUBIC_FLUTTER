@@ -715,6 +715,98 @@ FFI_EXPORT int bicubic_resize_png(
 }
 
 // ============================================================================
+// Raw RGB output (for ML preprocessing)
+// ============================================================================
+
+FFI_EXPORT int bicubic_resize_to_rgb(
+    const uint8_t* input_data,
+    int input_size,
+    int output_width,
+    int output_height,
+    int filter,
+    int edge_mode,
+    float crop,
+    int crop_anchor,
+    int aspect_mode,
+    float aspect_w,
+    float aspect_h,
+    int apply_exif,
+    int is_jpeg,
+    uint8_t** output_data,
+    int* output_size
+) {
+    if (input_data == NULL || output_data == NULL || output_size == NULL) {
+        return -1;
+    }
+    if (input_size <= 0 || output_width <= 0 || output_height <= 0) {
+        return -1;
+    }
+
+    // Parse EXIF orientation before decoding (JPEG only)
+    int orientation = 1;  // Default: no transformation
+    if (is_jpeg && apply_exif) {
+        orientation = parse_exif_orientation(input_data, input_size);
+    }
+
+    // Decode image
+    int src_width, src_height, src_channels;
+    uint8_t* src_pixels = stbi_load_from_memory(
+        input_data, input_size,
+        &src_width, &src_height, &src_channels,
+        3  // Force RGB output
+    );
+
+    if (src_pixels == NULL) {
+        return -1;
+    }
+
+    // Apply EXIF orientation (JPEG only, may swap width/height)
+    if (is_jpeg && apply_exif) {
+        src_pixels = apply_orientation(src_pixels, &src_width, &src_height, 3, orientation);
+    }
+
+    // Calculate crop region
+    int crop_x, crop_y, crop_width, crop_height;
+    calc_crop(src_width, src_height, crop, crop_anchor, aspect_mode, aspect_w, aspect_h,
+              &crop_x, &crop_y, &crop_width, &crop_height);
+
+    // Get pointer to start of cropped region
+    const uint8_t* crop_start = src_pixels + (crop_y * src_width + crop_x) * 3;
+
+    // Allocate output pixel buffer (raw RGB)
+    int rgb_size = output_width * output_height * 3;
+    uint8_t* dst_pixels = (uint8_t*)malloc(rgb_size);
+    if (dst_pixels == NULL) {
+        free(src_pixels);
+        return -1;
+    }
+
+    // Resize using selected filter (from cropped region)
+    stbir_resize(
+        crop_start,
+        crop_width,
+        crop_height,
+        src_width * 3,  // Original stride
+        dst_pixels,
+        output_width,
+        output_height,
+        output_width * 3,
+        STBIR_RGB,
+        STBIR_TYPE_UINT8,
+        get_stbir_edge(edge_mode),
+        get_stbir_filter(filter)
+    );
+
+    free(src_pixels);
+
+    // Return raw RGB data (no encoding)
+    *output_data = dst_pixels;
+    *output_size = rgb_size;
+
+    return 0;
+}
+
+// ============================================================================
 // Memory management
 // ============================================================================
 

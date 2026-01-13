@@ -15,6 +15,7 @@
 - **Flexible crop system** - anchor position, aspect ratio modes, custom ratios
 - **Edge handling modes** - clamp, wrap, reflect, zero
 - **PNG compression control** - adjustable compression level
+- **ML preprocessing** - tensor normalization (ImageNet, centered, custom), HWC/CHW layouts, RGB/BGR ordering
 - Zero external Dart dependencies (only `ffi`)
 
 ## Installation
@@ -23,7 +24,7 @@ Add to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  flutter_bicubic_resize: ^1.2.2
+  flutter_bicubic_resize: ^1.3.0
 ```
 
 Or run:
@@ -188,6 +189,58 @@ final raw = BicubicResizer.resizeJpeg(
   applyExifOrientation: false,
 );
 ```
+
+### ML preprocessing with normalization
+
+Prepare images for ML models with proper normalization:
+
+```dart
+// For TensorFlow Lite / ImageNet models
+final Float32List tensor = BicubicResizer.resizeForModel(
+  bytes: imageBytes,
+  outputWidth: 224,
+  outputHeight: 224,
+  normalization: NormalizationType.imageNet,
+);
+
+// For MobileNet (centered normalization)
+final tensor = BicubicResizer.resizeForModel(
+  bytes: imageBytes,
+  outputWidth: 224,
+  outputHeight: 224,
+  normalization: NormalizationType.centered,  // [-1, 1]
+);
+
+// For PyTorch (CHW layout)
+final tensor = BicubicResizer.resizeForModel(
+  bytes: imageBytes,
+  outputWidth: 224,
+  outputHeight: 224,
+  normalization: NormalizationType.imageNet,
+  layout: TensorLayout.chw,
+);
+
+// Custom normalization
+final tensor = BicubicResizer.resizeForModel(
+  bytes: imageBytes,
+  outputWidth: 224,
+  outputHeight: 224,
+  normalization: NormalizationType.custom,
+  meanR: 0.5, meanG: 0.5, meanB: 0.5,
+  stdR: 0.5, stdG: 0.5, stdB: 0.5,
+);
+```
+
+Available normalizations:
+- `NormalizationType.none` - Raw pixel values (0-255) as float (default)
+- `NormalizationType.simple` - Divide by 255 → [0, 1]
+- `NormalizationType.centered` - (pixel / 127.5) - 1 → [-1, 1]
+- `NormalizationType.imageNet` - ImageNet mean/std normalization
+- `NormalizationType.custom` - User-defined mean/std
+
+Available layouts:
+- `TensorLayout.hwc` - Height, Width, Channels (TensorFlow/TFLite)
+- `TensorLayout.chw` - Channels, Height, Width (PyTorch)
 
 ### Complete example with all options
 

@@ -144,6 +144,46 @@ typedef BicubicResizePngDart = int Function(
 );
 
 // ============================================================================
+// C function signatures - Raw RGB output (for ML preprocessing)
+// ============================================================================
+
+typedef BicubicResizeToRgbNative = Int32 Function(
+  Pointer<Uint8> inputData,
+  Int32 inputSize,
+  Int32 outputWidth,
+  Int32 outputHeight,
+  Int32 filter,
+  Int32 edgeMode,
+  Float crop,
+  Int32 cropAnchor,
+  Int32 aspectMode,
+  Float aspectW,
+  Float aspectH,
+  Int32 applyExif,
+  Int32 isJpeg,
+  Pointer<Pointer<Uint8>> outputData,
+  Pointer<Int32> outputSize,
+);
+
+typedef BicubicResizeToRgbDart = int Function(
+  Pointer<Uint8> inputData,
+  int inputSize,
+  int outputWidth,
+  int outputHeight,
+  int filter,
+  int edgeMode,
+  double crop,
+  int cropAnchor,
+  int aspectMode,
+  double aspectW,
+  double aspectH,
+  int applyExif,
+  int isJpeg,
+  Pointer<Pointer<Uint8>> outputData,
+  Pointer<Int32> outputSize,
+);
+
+// ============================================================================
 // C function signatures - Memory management
 // ============================================================================
 
@@ -168,6 +208,9 @@ class NativeBindings {
   late final BicubicResizeJpegDart bicubicResizeJpeg;
   late final BicubicResizePngDart bicubicResizePng;
 
+  // Raw RGB output (for ML preprocessing)
+  late final BicubicResizeToRgbDart bicubicResizeToRgb;
+
   // Memory management
   late final FreeBufferDart freeBuffer;
 
@@ -187,7 +230,8 @@ class NativeBindings {
     } else if (Platform.isWindows) {
       return DynamicLibrary.open('flutter_bicubic_resize.dll');
     } else {
-      throw UnsupportedError('Unsupported platform: ${Platform.operatingSystem}');
+      throw UnsupportedError(
+          'Unsupported platform: ${Platform.operatingSystem}');
     }
   }
 
@@ -209,6 +253,12 @@ class NativeBindings {
     bicubicResizePng = _library
         .lookup<NativeFunction<BicubicResizePngNative>>('bicubic_resize_png')
         .asFunction<BicubicResizePngDart>();
+
+    // Raw RGB output (for ML preprocessing)
+    bicubicResizeToRgb = _library
+        .lookup<NativeFunction<BicubicResizeToRgbNative>>(
+            'bicubic_resize_to_rgb')
+        .asFunction<BicubicResizeToRgbDart>();
 
     // Memory management
     freeBuffer = _library

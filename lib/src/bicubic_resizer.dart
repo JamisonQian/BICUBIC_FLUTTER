@@ -5,6 +5,61 @@ import 'package:ffi/ffi.dart';
 
 import 'native_bindings.dart';
 
+// ============================================================================
+// ML Preprocessing Enums
+// ============================================================================
+
+/// Normalization type for ML model preprocessing.
+///
+/// Different ML models expect different input normalization schemes.
+/// Use [none] to get raw pixel values (0-255) as the default behavior.
+enum NormalizationType {
+  /// No normalization - returns raw pixel values (0-255).
+  /// This is the default behavior for backward compatibility.
+  none,
+
+  /// Simple normalization: pixel / 255.0 → [0.0, 1.0]
+  /// Common for TensorFlow Lite models.
+  simple,
+
+  /// Centered normalization: (pixel / 127.5) - 1.0 → [-1.0, 1.0]
+  /// Common for MobileNet and similar models.
+  centered,
+
+  /// ImageNet normalization with standard mean and std.
+  /// mean = [0.485, 0.456, 0.406], std = [0.229, 0.224, 0.225]
+  /// Common for ResNet, VGG, EfficientNet, etc.
+  imageNet,
+
+  /// Custom normalization with user-provided mean and std values.
+  /// Use [meanR], [meanG], [meanB], [stdR], [stdG], [stdB] parameters.
+  custom,
+}
+
+/// Channel ordering for ML model input.
+enum ChannelOrder {
+  /// RGB order (default) - Red, Green, Blue
+  rgb,
+
+  /// BGR order - Blue, Green, Red (used by some OpenCV-based models)
+  bgr,
+}
+
+/// Tensor layout for ML model input.
+enum TensorLayout {
+  /// Height, Width, Channels (default) - TensorFlow/TFLite format
+  /// Shape: [height, width, channels]
+  hwc,
+
+  /// Channels, Height, Width - PyTorch format
+  /// Shape: [channels, height, width]
+  chw,
+}
+
+// ============================================================================
+// Image Format Enum
+// ============================================================================
+
 /// Supported image formats for resize operations
 enum ImageFormat {
   /// JPEG format
@@ -539,6 +594,240 @@ class BicubicResizer {
           aspectRatioHeight: aspectRatioHeight,
           compressionLevel: compressionLevel,
         );
+    }
+  }
+
+  // ============================================================================
+  // ML Model Preprocessing
+  // ============================================================================
+
+  /// Resize and normalize image for ML model inference.
+  ///
+  /// This method combines resize with normalization to produce a tensor-ready
+  /// Float32List that can be directly fed to ML models.
+  ///
+  /// [bytes] - Image data (JPEG or PNG)
+  /// [outputWidth] - Desired output width (e.g., 224 for many models)
+  /// [outputHeight] - Desired output height (e.g., 224 for many models)
+  /// [normalization] - Type of normalization to apply (default: none)
+  /// [channelOrder] - RGB or BGR channel ordering (default: rgb)
+  /// [layout] - Tensor layout HWC or CHW (default: hwc)
+  /// [filter] - Bicubic filter type (default: Catmull-Rom)
+  /// [edgeMode] - How to handle pixels outside image bounds (default: clamp)
+  /// [crop] - Crop factor (0.0-1.0), 1.0 = no crop, 0.5 = 50%
+  /// [cropAnchor] - Position to anchor the crop (default: center)
+  /// [cropAspectRatio] - Aspect ratio mode for crop (default: square)
+  /// [aspectRatioWidth] - Custom aspect ratio width (only used with CropAspectRatio.custom)
+  /// [aspectRatioHeight] - Custom aspect ratio height (only used with CropAspectRatio.custom)
+  /// [applyExifOrientation] - Whether to apply EXIF orientation for JPEG (default: true)
+  /// [meanR], [meanG], [meanB] - Custom mean values per channel (only used with NormalizationType.custom)
+  /// [stdR], [stdG], [stdB] - Custom std values per channel (only used with NormalizationType.custom)
+  ///
+  /// Returns a Float32List ready for ML model input.
+  /// - For [NormalizationType.none]: values are 0.0-255.0 (raw pixel values as floats)
+  /// - For [NormalizationType.simple]: values are 0.0-1.0
+  /// - For [NormalizationType.centered]: values are -1.0-1.0
+  /// - For [NormalizationType.imageNet]: normalized using ImageNet mean/std
+  /// - For [NormalizationType.custom]: normalized using provided mean/std
+  static Float32List resizeForModel({
+    required Uint8List bytes,
+    required int outputWidth,
+    required int outputHeight,
+    NormalizationType normalization = NormalizationType.none,
+    ChannelOrder channelOrder = ChannelOrder.rgb,
+    TensorLayout layout = TensorLayout.hwc,
+    BicubicFilter filter = BicubicFilter.catmullRom,
+    EdgeMode edgeMode = EdgeMode.clamp,
+    double crop = 1.0,
+    CropAnchor cropAnchor = CropAnchor.center,
+    CropAspectRatio cropAspectRatio = CropAspectRatio.square,
+    double aspectRatioWidth = 1.0,
+    double aspectRatioHeight = 1.0,
+    bool applyExifOrientation = true,
+    // Custom normalization parameters
+    double meanR = 0.0,
+    double meanG = 0.0,
+    double meanB = 0.0,
+    double stdR = 1.0,
+    double stdG = 1.0,
+    double stdB = 1.0,
+  }) {
+    // First, get the raw RGB pixels using existing resize pipeline
+    final Uint8List rgbBytes = _resizeToRgb(
+      bytes: bytes,
+      outputWidth: outputWidth,
+      outputHeight: outputHeight,
+      filter: filter,
+      edgeMode: edgeMode,
+      crop: crop,
+      cropAnchor: cropAnchor,
+      cropAspectRatio: cropAspectRatio,
+      aspectRatioWidth: aspectRatioWidth,
+      aspectRatioHeight: aspectRatioHeight,
+      applyExifOrientation: applyExifOrientation,
+    );
+
+    // Pre-compute scale and offset for optimized normalization
+    // Formula: output = pixel * scale + offset
+    // This avoids divisions in the hot loop
+    double scaleR, scaleG, scaleB;
+    double offsetR, offsetG, offsetB;
+
+    switch (normalization) {
+      case NormalizationType.none:
+        // No normalization - raw pixel values as float
+        scaleR = scaleG = scaleB = 1.0;
+        offsetR = offsetG = offsetB = 0.0;
+        break;
+      case NormalizationType.simple:
+        // pixel / 255.0 → [0, 1]
+        scaleR = scaleG = scaleB = 1.0 / 255.0;
+        offsetR = offsetG = offsetB = 0.0;
+        break;
+      case NormalizationType.centered:
+        // (pixel / 127.5) - 1.0 → [-1, 1]
+        scaleR = scaleG = scaleB = 1.0 / 127.5;
+        offsetR = offsetG = offsetB = -1.0;
+        break;
+      case NormalizationType.imageNet:
+        // ImageNet: (pixel/255 - mean) / std = pixel * (1/(255*std)) - mean/std
+        const double imgMeanR = 0.485, imgMeanG = 0.456, imgMeanB = 0.406;
+        const double imgStdR = 0.229, imgStdG = 0.224, imgStdB = 0.225;
+        scaleR = 1.0 / (255.0 * imgStdR);
+        scaleG = 1.0 / (255.0 * imgStdG);
+        scaleB = 1.0 / (255.0 * imgStdB);
+        offsetR = -imgMeanR / imgStdR;
+        offsetG = -imgMeanG / imgStdG;
+        offsetB = -imgMeanB / imgStdB;
+        break;
+      case NormalizationType.custom:
+        // Custom: (pixel/255 - mean) / std = pixel * (1/(255*std)) - mean/std
+        scaleR = 1.0 / (255.0 * stdR);
+        scaleG = 1.0 / (255.0 * stdG);
+        scaleB = 1.0 / (255.0 * stdB);
+        offsetR = -meanR / stdR;
+        offsetG = -meanG / stdG;
+        offsetB = -meanB / stdB;
+        break;
+    }
+
+    // Allocate output buffer
+    final int pixelCount = outputWidth * outputHeight;
+    final Float32List output = Float32List(pixelCount * 3);
+    final bool isBgr = channelOrder == ChannelOrder.bgr;
+
+    // Process pixels - branch outside loop for performance
+    if (layout == TensorLayout.hwc) {
+      // HWC layout: [height, width, channels] - interleaved
+      if (isBgr) {
+        for (int i = 0; i < pixelCount; i++) {
+          final int srcIdx = i * 3;
+          final int dstIdx = i * 3;
+          output[dstIdx] = rgbBytes[srcIdx + 2] * scaleB + offsetB;
+          output[dstIdx + 1] = rgbBytes[srcIdx + 1] * scaleG + offsetG;
+          output[dstIdx + 2] = rgbBytes[srcIdx] * scaleR + offsetR;
+        }
+      } else {
+        for (int i = 0; i < pixelCount; i++) {
+          final int srcIdx = i * 3;
+          final int dstIdx = i * 3;
+          output[dstIdx] = rgbBytes[srcIdx] * scaleR + offsetR;
+          output[dstIdx + 1] = rgbBytes[srcIdx + 1] * scaleG + offsetG;
+          output[dstIdx + 2] = rgbBytes[srcIdx + 2] * scaleB + offsetB;
+        }
+      }
+    } else {
+      // CHW layout: [channels, height, width] - planar
+      final int plane1 = pixelCount;
+      final int plane2 = pixelCount * 2;
+
+      if (isBgr) {
+        for (int i = 0; i < pixelCount; i++) {
+          final int srcIdx = i * 3;
+          output[i] = rgbBytes[srcIdx + 2] * scaleB + offsetB;
+          output[plane1 + i] = rgbBytes[srcIdx + 1] * scaleG + offsetG;
+          output[plane2 + i] = rgbBytes[srcIdx] * scaleR + offsetR;
+        }
+      } else {
+        for (int i = 0; i < pixelCount; i++) {
+          final int srcIdx = i * 3;
+          output[i] = rgbBytes[srcIdx] * scaleR + offsetR;
+          output[plane1 + i] = rgbBytes[srcIdx + 1] * scaleG + offsetG;
+          output[plane2 + i] = rgbBytes[srcIdx + 2] * scaleB + offsetB;
+        }
+      }
+    }
+
+    return output;
+  }
+
+  /// Internal method to decode and resize image to raw RGB bytes.
+  static Uint8List _resizeToRgb({
+    required Uint8List bytes,
+    required int outputWidth,
+    required int outputHeight,
+    BicubicFilter filter = BicubicFilter.catmullRom,
+    EdgeMode edgeMode = EdgeMode.clamp,
+    double crop = 1.0,
+    CropAnchor cropAnchor = CropAnchor.center,
+    CropAspectRatio cropAspectRatio = CropAspectRatio.square,
+    double aspectRatioWidth = 1.0,
+    double aspectRatioHeight = 1.0,
+    bool applyExifOrientation = true,
+  }) {
+    final format = detectFormat(bytes);
+
+    if (format == null) {
+      throw UnsupportedImageFormatException(bytes: bytes);
+    }
+
+    final inputPtr = calloc<Uint8>(bytes.length);
+    final outputDataPtr = calloc<Pointer<Uint8>>();
+    final outputSizePtr = calloc<Int32>();
+
+    try {
+      inputPtr.asTypedList(bytes.length).setAll(0, bytes);
+
+      // Use native pipeline to decode, apply EXIF, crop, and resize
+      // Output raw RGB instead of re-encoding
+      final result = NativeBindings.instance.bicubicResizeToRgb(
+        inputPtr,
+        bytes.length,
+        outputWidth,
+        outputHeight,
+        filter.value,
+        edgeMode.value,
+        crop,
+        cropAnchor.value,
+        cropAspectRatio.value,
+        aspectRatioWidth,
+        aspectRatioHeight,
+        format == ImageFormat.jpeg && applyExifOrientation ? 1 : 0,
+        format == ImageFormat.jpeg ? 1 : 0, // isJpeg flag
+        outputDataPtr,
+        outputSizePtr,
+      );
+
+      if (result != 0) {
+        throw Exception('Native resize to RGB failed with code: $result');
+      }
+
+      final outputData = outputDataPtr.value;
+      final outputSize = outputSizePtr.value;
+
+      // Copy data before freeing native buffer
+      final resultBytes = Uint8List.fromList(
+        outputData.asTypedList(outputSize),
+      );
+
+      // Free the native-allocated buffer
+      NativeBindings.instance.freeBuffer(outputData);
+
+      return resultBytes;
+    } finally {
+      calloc.free(inputPtr);
+      calloc.free(outputDataPtr);
+      calloc.free(outputSizePtr);
     }
   }
 }

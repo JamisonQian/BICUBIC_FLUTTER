@@ -11,11 +11,18 @@ Complete API reference for `flutter_bicubic_resize`.
   - [resizePng](#resizepng)
   - [resizeRgb](#resizergb)
   - [resizeRgba](#resizergba)
+  - [resize](#resize)
+  - [resizeForModel](#resizeformodel) ✨ NEW
+  - [detectFormat](#detectformat)
 - [Enums](#enums)
   - [BicubicFilter](#bicubicfilter)
   - [EdgeMode](#edgemode)
   - [CropAnchor](#cropanchor)
   - [CropAspectRatio](#cropaspectratio)
+  - [NormalizationType](#normalizationtype) ✨ NEW
+  - [ChannelOrder](#channelorder) ✨ NEW
+  - [TensorLayout](#tensorlayout) ✨ NEW
+- [ML Preprocessing](#ml-preprocessing) ✨ NEW
 - [EXIF Orientation](#exif-orientation)
 - [Crop System](#crop-system)
 - [Error Handling](#error-handling)
@@ -260,6 +267,132 @@ static Uint8List resizeRgba({
 
 ---
 
+### resize
+
+Generic resize with automatic format detection.
+
+```dart
+static Uint8List resize({
+  required Uint8List bytes,
+  required int outputWidth,
+  required int outputHeight,
+  int quality = 95,
+  int compressionLevel = 6,
+  BicubicFilter filter = BicubicFilter.catmullRom,
+  EdgeMode edgeMode = EdgeMode.clamp,
+  double crop = 1.0,
+  CropAnchor cropAnchor = CropAnchor.center,
+  CropAspectRatio cropAspectRatio = CropAspectRatio.square,
+  double aspectRatioWidth = 1.0,
+  double aspectRatioHeight = 1.0,
+  bool applyExifOrientation = true,
+})
+```
+
+**Returns:** `Uint8List` - Resized image in the same format as input.
+
+**Throws:** `UnsupportedImageFormatException` if format is not JPEG or PNG.
+
+---
+
+### resizeForModel
+
+Resize and normalize image for ML model inference. Returns `Float32List` ready for TensorFlow Lite, PyTorch, or other ML frameworks.
+
+```dart
+static Float32List resizeForModel({
+  required Uint8List bytes,
+  required int outputWidth,
+  required int outputHeight,
+  NormalizationType normalization = NormalizationType.none,
+  ChannelOrder channelOrder = ChannelOrder.rgb,
+  TensorLayout layout = TensorLayout.hwc,
+  BicubicFilter filter = BicubicFilter.catmullRom,
+  EdgeMode edgeMode = EdgeMode.clamp,
+  double crop = 1.0,
+  CropAnchor cropAnchor = CropAnchor.center,
+  CropAspectRatio cropAspectRatio = CropAspectRatio.square,
+  double aspectRatioWidth = 1.0,
+  double aspectRatioHeight = 1.0,
+  bool applyExifOrientation = true,
+  // Custom normalization parameters (only with NormalizationType.custom)
+  double meanR = 0.0,
+  double meanG = 0.0,
+  double meanB = 0.0,
+  double stdR = 1.0,
+  double stdG = 1.0,
+  double stdB = 1.0,
+})
+```
+
+**Parameters:**
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `bytes` | `Uint8List` | Yes | - | Image data (JPEG or PNG) |
+| `outputWidth` | `int` | Yes | - | Desired output width (e.g., 224) |
+| `outputHeight` | `int` | Yes | - | Desired output height (e.g., 224) |
+| `normalization` | `NormalizationType` | No | `none` | Type of normalization to apply |
+| `channelOrder` | `ChannelOrder` | No | `rgb` | RGB or BGR channel ordering |
+| `layout` | `TensorLayout` | No | `hwc` | Tensor layout (HWC or CHW) |
+| `meanR/G/B` | `double` | No | 0.0 | Custom mean values per channel |
+| `stdR/G/B` | `double` | No | 1.0 | Custom std values per channel |
+
+**Returns:** `Float32List` - Tensor data ready for ML model input.
+
+**Example:**
+
+```dart
+// For TensorFlow Lite (ImageNet normalization)
+final tensor = BicubicResizer.resizeForModel(
+  bytes: imageBytes,
+  outputWidth: 224,
+  outputHeight: 224,
+  normalization: NormalizationType.imageNet,
+);
+
+// For MobileNet (centered normalization)
+final tensor = BicubicResizer.resizeForModel(
+  bytes: imageBytes,
+  outputWidth: 224,
+  outputHeight: 224,
+  normalization: NormalizationType.centered,
+);
+
+// For PyTorch (CHW layout, ImageNet normalization)
+final tensor = BicubicResizer.resizeForModel(
+  bytes: imageBytes,
+  outputWidth: 224,
+  outputHeight: 224,
+  normalization: NormalizationType.imageNet,
+  layout: TensorLayout.chw,
+);
+
+// Custom normalization
+final tensor = BicubicResizer.resizeForModel(
+  bytes: imageBytes,
+  outputWidth: 224,
+  outputHeight: 224,
+  normalization: NormalizationType.custom,
+  meanR: 0.5, meanG: 0.5, meanB: 0.5,
+  stdR: 0.5, stdG: 0.5, stdB: 0.5,
+);
+```
+
+---
+
+### detectFormat
+
+Detect image format from raw bytes.
+
+```dart
+static ImageFormat? detectFormat(Uint8List bytes)
+```
+
+**Returns:** `ImageFormat.jpeg`, `ImageFormat.png`, or `null` if unsupported.
+
+---
+
 ## Enums
 
 ### BicubicFilter
@@ -398,6 +531,123 @@ final fourByThree = BicubicResizer.resizeJpeg(
   cropAspectRatio: CropAspectRatio.custom,
   aspectRatioWidth: 4.0,
   aspectRatioHeight: 3.0,
+);
+```
+
+---
+
+### NormalizationType
+
+Defines normalization schemes for ML model preprocessing.
+
+```dart
+enum NormalizationType {
+  none,      // No normalization (default) - raw pixel values 0-255 as float
+  simple,    // pixel / 255.0 → [0, 1]
+  centered,  // (pixel / 127.5) - 1.0 → [-1, 1]
+  imageNet,  // ImageNet mean/std normalization
+  custom,    // User-defined mean/std values
+}
+```
+
+| Type | Formula | Output Range | Use Case |
+|------|---------|--------------|----------|
+| `none` | `pixel` | [0, 255] | Raw values, backward compatible |
+| `simple` | `pixel / 255` | [0, 1] | TensorFlow Lite, basic models |
+| `centered` | `(pixel / 127.5) - 1` | [-1, 1] | MobileNet, some TFLite models |
+| `imageNet` | `(pixel/255 - mean) / std` | ~[-2.5, 2.5] | ResNet, VGG, EfficientNet |
+| `custom` | `(pixel/255 - mean) / std` | varies | Custom trained models |
+
+**ImageNet values:**
+- mean: [0.485, 0.456, 0.406]
+- std: [0.229, 0.224, 0.225]
+
+---
+
+### ChannelOrder
+
+Defines RGB vs BGR channel ordering.
+
+```dart
+enum ChannelOrder {
+  rgb,  // Red, Green, Blue (default) - TensorFlow, most models
+  bgr,  // Blue, Green, Red - OpenCV, some PyTorch models
+}
+```
+
+---
+
+### TensorLayout
+
+Defines tensor memory layout.
+
+```dart
+enum TensorLayout {
+  hwc,  // Height, Width, Channels (default) - TensorFlow/TFLite
+  chw,  // Channels, Height, Width - PyTorch
+}
+```
+
+| Layout | Shape | Memory Order | Framework |
+|--------|-------|--------------|-----------|
+| `hwc` | [H, W, C] | Interleaved | TensorFlow, TFLite |
+| `chw` | [C, H, W] | Planar | PyTorch, ONNX |
+
+---
+
+## ML Preprocessing
+
+The `resizeForModel()` method provides a complete ML preprocessing pipeline:
+
+1. **Decode** - JPEG/PNG to raw pixels
+2. **EXIF** - Correct orientation (optional)
+3. **Crop** - Flexible anchor and aspect ratio
+4. **Resize** - Bicubic interpolation
+5. **Normalize** - Scale and shift values
+6. **Layout** - HWC or CHW format
+7. **Channel order** - RGB or BGR
+
+### Performance
+
+The normalization is optimized using pre-computed scale and offset factors:
+- Formula: `output = pixel * scale + offset`
+- No divisions in the hot loop
+- Single pass through all pixels
+
+### Example: Complete TFLite Pipeline
+
+```dart
+import 'package:flutter_bicubic_resize/flutter_bicubic_resize.dart';
+import 'package:tflite_flutter/tflite_flutter.dart';
+
+// Load model
+final interpreter = await Interpreter.fromAsset('model.tflite');
+
+// Preprocess image
+final Float32List tensor = BicubicResizer.resizeForModel(
+  bytes: imageBytes,
+  outputWidth: 224,
+  outputHeight: 224,
+  normalization: NormalizationType.imageNet,
+  layout: TensorLayout.hwc,
+);
+
+// Run inference
+final input = tensor.reshape([1, 224, 224, 3]);
+final output = List.filled(1000, 0.0).reshape([1, 1000]);
+interpreter.run(input, output);
+```
+
+### Example: PyTorch Mobile
+
+```dart
+// PyTorch typically uses CHW layout
+final Float32List tensor = BicubicResizer.resizeForModel(
+  bytes: imageBytes,
+  outputWidth: 224,
+  outputHeight: 224,
+  normalization: NormalizationType.imageNet,
+  layout: TensorLayout.chw,  // PyTorch format
 );
 ```
 
