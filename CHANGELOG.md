@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.1] - 2026-01-13
+
+### Fixed
+- **Android 15 compatibility** - Added 16KB page alignment for native library
+  - Fixed `libflutter_bicubic_resize.so` alignment from 4KB to 16KB
+  - Required for Android 15 (API 35+) which enforces 16KB page size
+  - Added `-Wl,-z,max-page-size=16384` linker flag in CMakeLists.txt
+
 ## [1.3.0] - 2026-01-13
 
 ### Added
