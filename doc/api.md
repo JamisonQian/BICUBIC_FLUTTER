@@ -7,22 +7,24 @@ Complete API reference for `flutter_bicubic_resize`.
 ## Table of Contents
 
 - [BicubicResizer](#bicubicresizer)
-  - [resizeJpeg](#resizejpeg)
-  - [resizePng](#resizepng)
-  - [resizeRgb](#resizergb)
-  - [resizeRgba](#resizergba)
-  - [resize](#resize)
-  - [resizeForModel](#resizeformodel) ✨ NEW
+  - [resizeJpeg](#resizejpeg) / [resizeJpegAsync](#async-methods)
+  - [resizePng](#resizepng) / [resizePngAsync](#async-methods)
+  - [resizeRgb](#resizergb) / [resizeRgbAsync](#async-methods)
+  - [resizeRgba](#resizergba) / [resizeRgbaAsync](#async-methods)
+  - [resize](#resize) / [resizeAsync](#async-methods)
+  - [resizeForModel](#resizeformodel) / [resizeForModelAsync](#async-methods)
   - [detectFormat](#detectformat)
+- [Async Methods](#async-methods)
 - [Enums](#enums)
   - [BicubicFilter](#bicubicfilter)
   - [EdgeMode](#edgemode)
   - [CropAnchor](#cropanchor)
   - [CropAspectRatio](#cropaspectratio)
-  - [NormalizationType](#normalizationtype) ✨ NEW
-  - [ChannelOrder](#channelorder) ✨ NEW
-  - [TensorLayout](#tensorlayout) ✨ NEW
-- [ML Preprocessing](#ml-preprocessing) ✨ NEW
+  - [NormalizationType](#normalizationtype)
+  - [ChannelOrder](#channelorder)
+  - [TensorLayout](#tensorlayout)
+  - [BicubicNativeError](#bicubicnativeerror)
+- [ML Preprocessing](#ml-preprocessing)
 - [EXIF Orientation](#exif-orientation)
 - [Crop System](#crop-system)
 - [Error Handling](#error-handling)
@@ -393,6 +395,59 @@ static ImageFormat? detectFormat(Uint8List bytes)
 
 ---
 
+## Async Methods
+
+All public resize methods have async counterparts that run in a separate isolate via `Isolate.run()`, keeping the UI thread free. Each async method accepts the same parameters as its sync version.
+
+| Sync Method | Async Method | Return Type |
+|-------------|-------------|-------------|
+| `resizeJpeg()` | `resizeJpegAsync()` | `Future<Uint8List>` |
+| `resizePng()` | `resizePngAsync()` | `Future<Uint8List>` |
+| `resizeRgb()` | `resizeRgbAsync()` | `Future<Uint8List>` |
+| `resizeRgba()` | `resizeRgbaAsync()` | `Future<Uint8List>` |
+| `resize()` | `resizeAsync()` | `Future<Uint8List>` |
+| `resizeForModel()` | `resizeForModelAsync()` | `Future<Float32List>` |
+
+**Example:**
+
+```dart
+// Non-blocking JPEG resize
+final resized = await BicubicResizer.resizeJpegAsync(
+  jpegBytes: originalBytes,
+  outputWidth: 224,
+  outputHeight: 224,
+);
+
+// Non-blocking PNG resize
+final resizedPng = await BicubicResizer.resizePngAsync(
+  pngBytes: originalBytes,
+  outputWidth: 224,
+  outputHeight: 224,
+);
+
+// Non-blocking auto-detect resize
+final resized = await BicubicResizer.resizeAsync(
+  bytes: imageBytes,
+  outputWidth: 224,
+  outputHeight: 224,
+);
+
+// Non-blocking ML preprocessing
+final Float32List tensor = await BicubicResizer.resizeForModelAsync(
+  bytes: imageBytes,
+  outputWidth: 224,
+  outputHeight: 224,
+  normalization: NormalizationType.imageNet,
+);
+```
+
+**Notes:**
+- Async methods use `Isolate.run()` which requires Dart 2.19+ (satisfied by `sdk: '>=3.0.0'`).
+- The FFI native library is loaded automatically per-isolate.
+- Sync methods are still available and recommended when latency is not a concern (native C code is extremely fast).
+
+---
+
 ## Enums
 
 ### BicubicFilter
@@ -595,6 +650,37 @@ enum TensorLayout {
 
 ---
 
+### BicubicNativeError
+
+Maps native C error codes to descriptive Dart enum values.
+
+```dart
+enum BicubicNativeError {
+  nullInput,     // code: -1
+  invalidDims,   // code: -2
+  decodeFailed,  // code: -3
+  allocFailed,   // code: -4
+  encodeFailed,  // code: -5
+}
+```
+
+| Error | Code | Description |
+|-------|------|-------------|
+| `nullInput` | -1 | Null pointer passed to native function |
+| `invalidDims` | -2 | Width, height, or size <= 0 |
+| `decodeFailed` | -3 | Image decoding failed (corrupt or unsupported data) |
+| `allocFailed` | -4 | Memory allocation failed |
+| `encodeFailed` | -5 | JPEG/PNG encoding failed |
+
+**Static method:**
+
+```dart
+// Get enum value from native error code
+final error = BicubicNativeError.fromCode(-3); // BicubicNativeError.decodeFailed
+```
+
+---
+
 ## ML Preprocessing
 
 The `resizeForModel()` method provides a complete ML preprocessing pipeline:
@@ -755,24 +841,64 @@ final thumb = BicubicResizer.resizeJpeg(
 
 ## Error Handling
 
-All methods throw exceptions on failure:
+All methods throw specific exceptions on failure:
 
 | Exception | Cause |
 |-----------|-------|
-| `ArgumentError` | Input size mismatch for raw pixel methods |
-| `Exception` | Native resize operation failed |
+| `BicubicResizeException` | Native resize operation failed (with specific error code) |
+| `ArgumentError` | Input size mismatch for raw pixel methods, or zero `std` values in custom normalization |
+| `UnsupportedImageFormatException` | Unsupported image format (not JPEG or PNG) in `resize()` / `resizeForModel()` |
 
-**Example:**
+### BicubicResizeException
+
+Thrown when a native C operation fails. Contains the specific error code and a human-readable message.
 
 ```dart
 try {
   final resized = BicubicResizer.resizeJpeg(
-    jpegBytes: invalidBytes,
+    jpegBytes: corruptBytes,
     outputWidth: 224,
     outputHeight: 224,
   );
-} catch (e) {
-  print('Resize failed: $e');
+} on BicubicResizeException catch (e) {
+  print(e.error);      // BicubicNativeError.decodeFailed
+  print(e.nativeCode); // -3
+  print(e.message);    // "Image decoding failed (corrupt or unsupported data)"
+}
+```
+
+`BicubicResizeException` implements `Exception`, so existing `catch (e)` blocks continue to work.
+
+### ArgumentError
+
+Thrown for invalid parameters before the native call:
+
+```dart
+// Input size mismatch
+try {
+  BicubicResizer.resizeRgb(
+    input: Uint8List(100),  // wrong size
+    inputWidth: 100,
+    inputHeight: 100,
+    outputWidth: 50,
+    outputHeight: 50,
+  );
+} on ArgumentError catch (e) {
+  print(e.message); // "Input size (100) doesn't match expected size (30000)"
+}
+
+// Zero std in custom normalization
+try {
+  BicubicResizer.resizeForModel(
+    bytes: imageBytes,
+    outputWidth: 224,
+    outputHeight: 224,
+    normalization: NormalizationType.custom,
+    stdR: 0.0,  // invalid
+  );
+} on ArgumentError catch (e) {
+  print(e.name);    // "stdR"
+  print(e.message); // "must not be zero"
 }
 ```
 
@@ -780,28 +906,22 @@ try {
 
 ## Performance Tips
 
-1. **Operations are synchronous** - The native C code is very fast, so operations complete quickly without needing async/await.
-
-2. **Memory efficiency** - The entire pipeline (decode -> resize -> encode) runs in native code, minimizing memory overhead.
-
-3. **PNG compression trade-off** - Higher `compressionLevel` (closer to 9) produces smaller files but takes longer. Use 6 (default) for balanced performance.
-
-4. **For batch processing** - Consider using `compute()` to run resizing in an isolate:
+1. **Use async methods for UI responsiveness** - All methods have `*Async()` variants that run in a separate isolate, keeping the UI thread free:
 
 ```dart
-import 'package:flutter/foundation.dart';
-
-Future<Uint8List> resizeInBackground(Uint8List jpegBytes) {
-  return compute(
-    (bytes) => BicubicResizer.resizeJpeg(
-      jpegBytes: bytes,
-      outputWidth: 224,
-      outputHeight: 224,
-    ),
-    jpegBytes,
-  );
-}
+// Won't block the UI
+final resized = await BicubicResizer.resizeJpegAsync(
+  jpegBytes: largePhoto,
+  outputWidth: 224,
+  outputHeight: 224,
+);
 ```
+
+2. **Sync methods for maximum throughput** - The native C code is extremely fast (~15-30ms for 4K→224x224). Use sync methods when latency is not a concern or when already running in a background isolate.
+
+3. **Memory efficiency** - The entire pipeline (decode → resize → encode) runs in native code, minimizing memory overhead.
+
+4. **PNG compression trade-off** - Higher `compressionLevel` (closer to 9) produces smaller files but takes longer. Use 6 (default) for balanced performance.
 
 5. **Choosing output quality** - For JPEG, quality 85-95 provides good balance between file size and visual quality. Use 95+ for archival or when quality is critical.
 

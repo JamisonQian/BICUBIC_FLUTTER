@@ -16,6 +16,8 @@
 - **Edge handling modes** - clamp, wrap, reflect, zero
 - **PNG compression control** - adjustable compression level
 - **ML preprocessing** - tensor normalization (ImageNet, centered, custom), HWC/CHW layouts, RGB/BGR ordering
+- **Async wrappers** - all methods available as `*Async()` variants using `Isolate.run()`
+- **Specific error codes** - descriptive `BicubicResizeException` with native error mapping
 - Zero external Dart dependencies (only `ffi`)
 
 ## Installation
@@ -24,7 +26,7 @@ Add to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  flutter_bicubic_resize: ^1.3.0
+  flutter_bicubic_resize: ^1.4.0
 ```
 
 Or run:
@@ -260,6 +262,69 @@ final result = BicubicResizer.resizeJpeg(
   applyExifOrientation: true,
 );
 ```
+
+### Async methods
+
+All resize methods have async counterparts that run in a separate isolate, keeping the UI thread free:
+
+```dart
+// Non-blocking JPEG resize
+final resized = await BicubicResizer.resizeJpegAsync(
+  jpegBytes: originalBytes,
+  outputWidth: 224,
+  outputHeight: 224,
+);
+
+// Non-blocking PNG resize
+final resizedPng = await BicubicResizer.resizePngAsync(
+  pngBytes: originalBytes,
+  outputWidth: 224,
+  outputHeight: 224,
+);
+
+// Non-blocking auto-detect resize
+final resized = await BicubicResizer.resizeAsync(
+  bytes: imageBytes,
+  outputWidth: 224,
+  outputHeight: 224,
+);
+
+// Non-blocking ML preprocessing
+final Float32List tensor = await BicubicResizer.resizeForModelAsync(
+  bytes: imageBytes,
+  outputWidth: 224,
+  outputHeight: 224,
+  normalization: NormalizationType.imageNet,
+);
+```
+
+Available async methods: `resizeJpegAsync`, `resizePngAsync`, `resizeRgbAsync`, `resizeRgbaAsync`, `resizeAsync`, `resizeForModelAsync`.
+
+### Error handling
+
+Native errors return specific codes mapped to `BicubicResizeException`:
+
+```dart
+try {
+  final resized = BicubicResizer.resizeJpeg(
+    jpegBytes: corruptBytes,
+    outputWidth: 224,
+    outputHeight: 224,
+  );
+} on BicubicResizeException catch (e) {
+  print(e.error);      // BicubicNativeError.decodeFailed
+  print(e.nativeCode); // -3
+  print(e.message);    // "Image decoding failed (corrupt or unsupported data)"
+}
+```
+
+| Error | Code | Cause |
+|-------|------|-------|
+| `nullInput` | -1 | Null pointer passed to native function |
+| `invalidDims` | -2 | Width, height, or size <= 0 |
+| `decodeFailed` | -3 | Corrupt or unsupported image data |
+| `allocFailed` | -4 | Memory allocation failed |
+| `encodeFailed` | -5 | JPEG/PNG encoding failed |
 
 ## Why?
 
