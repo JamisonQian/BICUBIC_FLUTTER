@@ -14,6 +14,17 @@ extern "C" {
 #endif
 
 // ============================================================================
+// Error codes
+// ============================================================================
+
+#define BICUBIC_SUCCESS              0
+#define BICUBIC_ERROR_NULL_INPUT    -1
+#define BICUBIC_ERROR_INVALID_DIMS  -2
+#define BICUBIC_ERROR_DECODE_FAILED -3
+#define BICUBIC_ERROR_ALLOC_FAILED  -4
+#define BICUBIC_ERROR_ENCODE_FAILED -5
+
+// ============================================================================
 // Filter types (matching stb_image_resize2 filters)
 // ============================================================================
 
@@ -63,7 +74,7 @@ extern "C" {
 // crop_anchor: 0=center (default), 1-8 = other positions
 // aspect_mode: 0=square (default), 1=original, 2=custom
 // aspect_w, aspect_h: custom aspect ratio (only used if aspect_mode=2)
-// Returns 0 on success, -1 on error
+// Returns BICUBIC_SUCCESS (0) on success, or a negative BICUBIC_ERROR_* code
 FFI_EXPORT int bicubic_resize_rgb(
     const uint8_t* input,
     int input_width,
@@ -87,7 +98,7 @@ FFI_EXPORT int bicubic_resize_rgb(
 // crop_anchor: 0=center (default), 1-8 = other positions
 // aspect_mode: 0=square (default), 1=original, 2=custom
 // aspect_w, aspect_h: custom aspect ratio (only used if aspect_mode=2)
-// Returns 0 on success, -1 on error
+// Returns BICUBIC_SUCCESS (0) on success, or a negative BICUBIC_ERROR_* code
 FFI_EXPORT int bicubic_resize_rgba(
     const uint8_t* input,
     int input_width,
@@ -117,7 +128,7 @@ FFI_EXPORT int bicubic_resize_rgba(
 // aspect_mode: 0=square (default), 1=original, 2=custom
 // aspect_w, aspect_h: custom aspect ratio (only used if aspect_mode=2)
 // apply_exif: 1=apply EXIF orientation (default), 0=ignore EXIF
-// Returns 0 on success, -1 on error
+// Returns BICUBIC_SUCCESS (0) on success, or a negative BICUBIC_ERROR_* code
 FFI_EXPORT int bicubic_resize_jpeg(
     const uint8_t* input_data,
     int input_size,
@@ -148,7 +159,7 @@ FFI_EXPORT int bicubic_resize_jpeg(
 // aspect_mode: 0=square (default), 1=original, 2=custom
 // aspect_w, aspect_h: custom aspect ratio (only used if aspect_mode=2)
 // compression_level: PNG compression 0-9 (0=none, 9=max, default=6)
-// Returns 0 on success, -1 on error
+// Returns BICUBIC_SUCCESS (0) on success, or a negative BICUBIC_ERROR_* code
 FFI_EXPORT int bicubic_resize_png(
     const uint8_t* input_data,
     int input_size,
@@ -180,7 +191,7 @@ FFI_EXPORT int bicubic_resize_png(
 // aspect_w, aspect_h: custom aspect ratio (only used if aspect_mode=2)
 // apply_exif: 1=apply EXIF orientation (JPEG only), 0=ignore EXIF
 // is_jpeg: 1=input is JPEG, 0=input is PNG
-// Returns 0 on success, -1 on error
+// Returns BICUBIC_SUCCESS (0) on success, or a negative BICUBIC_ERROR_* code
 FFI_EXPORT int bicubic_resize_to_rgb(
     const uint8_t* input_data,
     int input_size,

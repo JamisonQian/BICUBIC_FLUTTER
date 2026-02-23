@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.4.0] - 2026-02-23
+
+### Added
+- **Async wrappers** for all public resize methods using `Isolate.run()` to avoid blocking the UI thread
+  - `resizeJpegAsync()`, `resizePngAsync()`, `resizeRgbAsync()`, `resizeRgbaAsync()`
+  - `resizeAsync()` (auto-detect format), `resizeForModelAsync()` (ML preprocessing)
+- **Specific native error codes** replacing generic `-1` for better debugging
+  - `BicubicNativeError` enum: `nullInput` (-1), `invalidDims` (-2), `decodeFailed` (-3), `allocFailed` (-4), `encodeFailed` (-5)
+  - `BicubicResizeException` class with `nativeCode`, `error`, and human-readable `message`
+- **Custom normalization validation** - `resizeForModel()` now throws `ArgumentError` if any `std` value is zero
+
+### Changed
+- Native C functions now return specific `BICUBIC_ERROR_*` codes instead of `-1` for all errors
+- Dart error handling uses `BicubicResizeException` (implements `Exception` for backward compatibility)
+
 ## [1.3.1] - 2026-01-13
 
 ### Fixed

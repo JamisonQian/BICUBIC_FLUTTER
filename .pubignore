@@ -13,3 +13,8 @@ build/
 # Generated files
 *.g.dart
 *.freezed.dart
+
+# Files checked into git but not needed in published package
+example/ios/Runner/GeneratedPluginRegistrant.h
+example/ios/Runner/GeneratedPluginRegistrant.m
+example/pubspec.lock

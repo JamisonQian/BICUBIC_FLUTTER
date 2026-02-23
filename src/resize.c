@@ -364,10 +364,10 @@ FFI_EXPORT int bicubic_resize_rgb(
     float aspect_h
 ) {
     if (input == NULL || output == NULL) {
-        return -1;
+        return BICUBIC_ERROR_NULL_INPUT;
     }
     if (input_width <= 0 || input_height <= 0 || output_width <= 0 || output_height <= 0) {
-        return -1;
+        return BICUBIC_ERROR_INVALID_DIMS;
     }
 
     // Calculate crop region
@@ -393,7 +393,7 @@ FFI_EXPORT int bicubic_resize_rgb(
         get_stbir_filter(filter)
     );
 
-    return 0;
+    return BICUBIC_SUCCESS;
 }
 
 FFI_EXPORT int bicubic_resize_rgba(
@@ -412,10 +412,10 @@ FFI_EXPORT int bicubic_resize_rgba(
     float aspect_h
 ) {
     if (input == NULL || output == NULL) {
-        return -1;
+        return BICUBIC_ERROR_NULL_INPUT;
     }
     if (input_width <= 0 || input_height <= 0 || output_width <= 0 || output_height <= 0) {
-        return -1;
+        return BICUBIC_ERROR_INVALID_DIMS;
     }
 
     // Calculate crop region
@@ -441,7 +441,7 @@ FFI_EXPORT int bicubic_resize_rgba(
         get_stbir_filter(filter)
     );
 
-    return 0;
+    return BICUBIC_SUCCESS;
 }
 
 // ============================================================================
@@ -489,10 +489,10 @@ FFI_EXPORT int bicubic_resize_jpeg(
     int* output_size
 ) {
     if (input_data == NULL || output_data == NULL || output_size == NULL) {
-        return -1;
+        return BICUBIC_ERROR_NULL_INPUT;
     }
     if (input_size <= 0 || output_width <= 0 || output_height <= 0) {
-        return -1;
+        return BICUBIC_ERROR_INVALID_DIMS;
     }
     if (quality < 1) quality = 1;
     if (quality > 100) quality = 100;
@@ -512,7 +512,7 @@ FFI_EXPORT int bicubic_resize_jpeg(
     );
 
     if (src_pixels == NULL) {
-        return -1;
+        return BICUBIC_ERROR_DECODE_FAILED;
     }
 
     // Apply EXIF orientation (may swap width/height for 90/270 degree rotations)
@@ -532,7 +532,7 @@ FFI_EXPORT int bicubic_resize_jpeg(
     uint8_t* dst_pixels = (uint8_t*)malloc(output_width * output_height * 3);
     if (dst_pixels == NULL) {
         free(src_pixels);
-        return -1;
+        return BICUBIC_ERROR_ALLOC_FAILED;
     }
 
     // Resize using selected filter (from cropped region)
@@ -561,7 +561,7 @@ FFI_EXPORT int bicubic_resize_jpeg(
 
     if (ctx.data == NULL) {
         free(dst_pixels);
-        return -1;
+        return BICUBIC_ERROR_ALLOC_FAILED;
     }
 
     int result = stbi_write_jpg_to_func(
@@ -574,14 +574,14 @@ FFI_EXPORT int bicubic_resize_jpeg(
 
     if (result == 0) {
         free(ctx.data);
-        return -1;
+        return BICUBIC_ERROR_ENCODE_FAILED;
     }
 
     // Shrink buffer to actual size
     *output_data = (uint8_t*)realloc(ctx.data, ctx.size);
     *output_size = ctx.size;
 
-    return 0;
+    return BICUBIC_SUCCESS;
 }
 
 // ============================================================================
@@ -608,10 +608,10 @@ FFI_EXPORT int bicubic_resize_png(
     int* output_size
 ) {
     if (input_data == NULL || output_data == NULL || output_size == NULL) {
-        return -1;
+        return BICUBIC_ERROR_NULL_INPUT;
     }
     if (input_size <= 0 || output_width <= 0 || output_height <= 0) {
-        return -1;
+        return BICUBIC_ERROR_INVALID_DIMS;
     }
 
     // Clamp compression level to valid range (0-9)
@@ -627,7 +627,7 @@ FFI_EXPORT int bicubic_resize_png(
     );
 
     if (src_pixels == NULL) {
-        return -1;
+        return BICUBIC_ERROR_DECODE_FAILED;
     }
 
     // Use 4 channels (RGBA) for PNG to preserve transparency
@@ -643,7 +643,7 @@ FFI_EXPORT int bicubic_resize_png(
             channels
         );
         if (src_pixels == NULL) {
-            return -1;
+            return BICUBIC_ERROR_DECODE_FAILED;
         }
     }
 
@@ -659,7 +659,7 @@ FFI_EXPORT int bicubic_resize_png(
     uint8_t* dst_pixels = (uint8_t*)malloc(output_width * output_height * channels);
     if (dst_pixels == NULL) {
         stbi_image_free(src_pixels);
-        return -1;
+        return BICUBIC_ERROR_ALLOC_FAILED;
     }
 
     // Resize using selected filter (from cropped region)
@@ -691,7 +691,7 @@ FFI_EXPORT int bicubic_resize_png(
 
     if (ctx.data == NULL) {
         free(dst_pixels);
-        return -1;
+        return BICUBIC_ERROR_ALLOC_FAILED;
     }
 
     int result = stbi_write_png_to_func(
@@ -704,14 +704,14 @@ FFI_EXPORT int bicubic_resize_png(
 
     if (result == 0) {
         free(ctx.data);
-        return -1;
+        return BICUBIC_ERROR_ENCODE_FAILED;
     }
 
     // Shrink buffer to actual size
     *output_data = (uint8_t*)realloc(ctx.data, ctx.size);
     *output_size = ctx.size;
 
-    return 0;
+    return BICUBIC_SUCCESS;
 }
 
 // ============================================================================
@@ -736,10 +736,10 @@ FFI_EXPORT int bicubic_resize_to_rgb(
     int* output_size
 ) {
     if (input_data == NULL || output_data == NULL || output_size == NULL) {
-        return -1;
+        return BICUBIC_ERROR_NULL_INPUT;
     }
     if (input_size <= 0 || output_width <= 0 || output_height <= 0) {
-        return -1;
+        return BICUBIC_ERROR_INVALID_DIMS;
     }
 
     // Parse EXIF orientation before decoding (JPEG only)
@@ -757,7 +757,7 @@ FFI_EXPORT int bicubic_resize_to_rgb(
     );
 
     if (src_pixels == NULL) {
-        return -1;
+        return BICUBIC_ERROR_DECODE_FAILED;
     }
 
     // Apply EXIF orientation (JPEG only, may swap width/height)
@@ -778,7 +778,7 @@ FFI_EXPORT int bicubic_resize_to_rgb(
     uint8_t* dst_pixels = (uint8_t*)malloc(rgb_size);
     if (dst_pixels == NULL) {
         free(src_pixels);
-        return -1;
+        return BICUBIC_ERROR_ALLOC_FAILED;
     }
 
     // Resize using selected filter (from cropped region)
@@ -803,7 +803,7 @@ FFI_EXPORT int bicubic_resize_to_rgb(
     *output_data = dst_pixels;
     *output_size = rgb_size;
 
-    return 0;
+    return BICUBIC_SUCCESS;
 }
 
 // ============================================================================

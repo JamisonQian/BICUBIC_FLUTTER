@@ -1,4 +1,5 @@
 import 'dart:ffi';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
@@ -18,11 +19,11 @@ enum NormalizationType {
   /// This is the default behavior for backward compatibility.
   none,
 
-  /// Simple normalization: pixel / 255.0 → [0.0, 1.0]
+  /// Simple normalization: pixel / 255.0 -> [0.0, 1.0]
   /// Common for TensorFlow Lite models.
   simple,
 
-  /// Centered normalization: (pixel / 127.5) - 1.0 → [-1.0, 1.0]
+  /// Centered normalization: (pixel / 127.5) - 1.0 -> [-1.0, 1.0]
   /// Common for MobileNet and similar models.
   centered,
 
@@ -87,6 +88,71 @@ class UnsupportedImageFormatException implements Exception {
 
   @override
   String toString() => 'UnsupportedImageFormatException: $message';
+}
+
+// ============================================================================
+// Native Error Codes
+// ============================================================================
+
+/// Native error codes returned by the C layer.
+///
+/// These correspond to the `BICUBIC_*` defines in `resize.h`.
+enum BicubicNativeError {
+  /// Null pointer passed as input, output, or size parameter.
+  nullInput(-1, 'Null pointer passed to native function'),
+
+  /// Invalid dimensions (width or height <= 0, or input_size <= 0).
+  invalidDims(-2, 'Invalid dimensions (width, height, or size <= 0)'),
+
+  /// Image decoding failed (corrupt or unsupported data).
+  decodeFailed(-3, 'Image decoding failed (corrupt or unsupported data)'),
+
+  /// Memory allocation failed in native code.
+  allocFailed(-4, 'Memory allocation failed in native code'),
+
+  /// Image encoding failed (JPEG/PNG write error).
+  encodeFailed(-5, 'Image encoding failed');
+
+  /// The native error code value.
+  final int code;
+
+  /// Human-readable description of the error.
+  final String description;
+
+  const BicubicNativeError(this.code, this.description);
+
+  /// Look up a [BicubicNativeError] by its native [code].
+  ///
+  /// Returns `null` if the code does not match any known error.
+  static BicubicNativeError? fromCode(int code) {
+    for (final error in values) {
+      if (error.code == code) return error;
+    }
+    return null;
+  }
+}
+
+/// Exception thrown when a native bicubic resize operation fails.
+///
+/// Contains the native error code and a human-readable description
+/// to aid debugging.
+class BicubicResizeException implements Exception {
+  /// The raw native error code returned by the C function.
+  final int nativeCode;
+
+  /// The mapped error enum, or `null` if the code is unrecognized.
+  final BicubicNativeError? error;
+
+  /// Human-readable message describing the failure.
+  final String message;
+
+  BicubicResizeException(this.nativeCode)
+      : error = BicubicNativeError.fromCode(nativeCode),
+        message = BicubicNativeError.fromCode(nativeCode)?.description ??
+            'Unknown native error (code: $nativeCode)';
+
+  @override
+  String toString() => 'BicubicResizeException: $message (code: $nativeCode)';
 }
 
 /// Available bicubic filter types
@@ -171,6 +237,19 @@ enum CropAspectRatio {
   const CropAspectRatio(this.value);
 }
 
+// ============================================================================
+// Helper: throw if native result indicates error
+// ============================================================================
+
+/// Maps a native return code to a [BicubicResizeException] and throws it.
+///
+/// Does nothing if [result] is 0 (success).
+void _throwIfError(int result) {
+  if (result != 0) {
+    throw BicubicResizeException(result);
+  }
+}
+
 class BicubicResizer {
   // ============================================================================
   // Raw pixel resize (sync)
@@ -236,9 +315,7 @@ class BicubicResizer {
         aspectRatioHeight,
       );
 
-      if (result != 0) {
-        throw Exception('Native bicubic resize failed with code: $result');
-      }
+      _throwIfError(result);
 
       return Uint8List.fromList(outputPtr.asTypedList(outputSize));
     } finally {
@@ -307,9 +384,7 @@ class BicubicResizer {
         aspectRatioHeight,
       );
 
-      if (result != 0) {
-        throw Exception('Native bicubic resize failed with code: $result');
-      }
+      _throwIfError(result);
 
       return Uint8List.fromList(outputPtr.asTypedList(outputSize));
     } finally {
@@ -380,9 +455,7 @@ class BicubicResizer {
         outputSizePtr,
       );
 
-      if (result != 0) {
-        throw Exception('Native JPEG resize failed with code: $result');
-      }
+      _throwIfError(result);
 
       final outputData = outputDataPtr.value;
       final outputSize = outputSizePtr.value;
@@ -463,9 +536,7 @@ class BicubicResizer {
         outputSizePtr,
       );
 
-      if (result != 0) {
-        throw Exception('Native PNG resize failed with code: $result');
-      }
+      _throwIfError(result);
 
       final outputData = outputDataPtr.value;
       final outputSize = outputSizePtr.value;
@@ -629,6 +700,9 @@ class BicubicResizer {
   /// - For [NormalizationType.centered]: values are -1.0-1.0
   /// - For [NormalizationType.imageNet]: normalized using ImageNet mean/std
   /// - For [NormalizationType.custom]: normalized using provided mean/std
+  ///
+  /// Throws [ArgumentError] if [normalization] is [NormalizationType.custom]
+  /// and any of [stdR], [stdG], [stdB] is zero (division by zero).
   static Float32List resizeForModel({
     required Uint8List bytes,
     required int outputWidth,
@@ -652,6 +726,19 @@ class BicubicResizer {
     double stdG = 1.0,
     double stdB = 1.0,
   }) {
+    // Validate custom normalization std values
+    if (normalization == NormalizationType.custom) {
+      if (stdR == 0.0) {
+        throw ArgumentError.value(stdR, 'stdR', 'must not be zero');
+      }
+      if (stdG == 0.0) {
+        throw ArgumentError.value(stdG, 'stdG', 'must not be zero');
+      }
+      if (stdB == 0.0) {
+        throw ArgumentError.value(stdB, 'stdB', 'must not be zero');
+      }
+    }
+
     // First, get the raw RGB pixels using existing resize pipeline
     final Uint8List rgbBytes = _resizeToRgb(
       bytes: bytes,
@@ -680,12 +767,12 @@ class BicubicResizer {
         offsetR = offsetG = offsetB = 0.0;
         break;
       case NormalizationType.simple:
-        // pixel / 255.0 → [0, 1]
+        // pixel / 255.0 -> [0, 1]
         scaleR = scaleG = scaleB = 1.0 / 255.0;
         offsetR = offsetG = offsetB = 0.0;
         break;
       case NormalizationType.centered:
-        // (pixel / 127.5) - 1.0 → [-1, 1]
+        // (pixel / 127.5) - 1.0 -> [-1, 1]
         scaleR = scaleG = scaleB = 1.0 / 127.5;
         offsetR = offsetG = offsetB = -1.0;
         break;
@@ -808,9 +895,7 @@ class BicubicResizer {
         outputSizePtr,
       );
 
-      if (result != 0) {
-        throw Exception('Native resize to RGB failed with code: $result');
-      }
+      _throwIfError(result);
 
       final outputData = outputDataPtr.value;
       final outputSize = outputSizePtr.value;
@@ -829,5 +914,223 @@ class BicubicResizer {
       calloc.free(outputDataPtr);
       calloc.free(outputSizePtr);
     }
+  }
+
+  // ============================================================================
+  // Async wrappers (run in isolate to avoid blocking UI thread)
+  // ============================================================================
+
+  /// Async version of [resizeRgb]. Runs in a separate isolate.
+  static Future<Uint8List> resizeRgbAsync({
+    required Uint8List input,
+    required int inputWidth,
+    required int inputHeight,
+    required int outputWidth,
+    required int outputHeight,
+    BicubicFilter filter = BicubicFilter.catmullRom,
+    EdgeMode edgeMode = EdgeMode.clamp,
+    double crop = 1.0,
+    CropAnchor cropAnchor = CropAnchor.center,
+    CropAspectRatio cropAspectRatio = CropAspectRatio.square,
+    double aspectRatioWidth = 1.0,
+    double aspectRatioHeight = 1.0,
+  }) {
+    return Isolate.run(
+      () => resizeRgb(
+        input: input,
+        inputWidth: inputWidth,
+        inputHeight: inputHeight,
+        outputWidth: outputWidth,
+        outputHeight: outputHeight,
+        filter: filter,
+        edgeMode: edgeMode,
+        crop: crop,
+        cropAnchor: cropAnchor,
+        cropAspectRatio: cropAspectRatio,
+        aspectRatioWidth: aspectRatioWidth,
+        aspectRatioHeight: aspectRatioHeight,
+      ),
+    );
+  }
+
+  /// Async version of [resizeRgba]. Runs in a separate isolate.
+  static Future<Uint8List> resizeRgbaAsync({
+    required Uint8List input,
+    required int inputWidth,
+    required int inputHeight,
+    required int outputWidth,
+    required int outputHeight,
+    BicubicFilter filter = BicubicFilter.catmullRom,
+    EdgeMode edgeMode = EdgeMode.clamp,
+    double crop = 1.0,
+    CropAnchor cropAnchor = CropAnchor.center,
+    CropAspectRatio cropAspectRatio = CropAspectRatio.square,
+    double aspectRatioWidth = 1.0,
+    double aspectRatioHeight = 1.0,
+  }) {
+    return Isolate.run(
+      () => resizeRgba(
+        input: input,
+        inputWidth: inputWidth,
+        inputHeight: inputHeight,
+        outputWidth: outputWidth,
+        outputHeight: outputHeight,
+        filter: filter,
+        edgeMode: edgeMode,
+        crop: crop,
+        cropAnchor: cropAnchor,
+        cropAspectRatio: cropAspectRatio,
+        aspectRatioWidth: aspectRatioWidth,
+        aspectRatioHeight: aspectRatioHeight,
+      ),
+    );
+  }
+
+  /// Async version of [resizeJpeg]. Runs in a separate isolate.
+  static Future<Uint8List> resizeJpegAsync({
+    required Uint8List jpegBytes,
+    required int outputWidth,
+    required int outputHeight,
+    int quality = 95,
+    BicubicFilter filter = BicubicFilter.catmullRom,
+    EdgeMode edgeMode = EdgeMode.clamp,
+    double crop = 1.0,
+    CropAnchor cropAnchor = CropAnchor.center,
+    CropAspectRatio cropAspectRatio = CropAspectRatio.square,
+    double aspectRatioWidth = 1.0,
+    double aspectRatioHeight = 1.0,
+    bool applyExifOrientation = true,
+  }) {
+    return Isolate.run(
+      () => resizeJpeg(
+        jpegBytes: jpegBytes,
+        outputWidth: outputWidth,
+        outputHeight: outputHeight,
+        quality: quality,
+        filter: filter,
+        edgeMode: edgeMode,
+        crop: crop,
+        cropAnchor: cropAnchor,
+        cropAspectRatio: cropAspectRatio,
+        aspectRatioWidth: aspectRatioWidth,
+        aspectRatioHeight: aspectRatioHeight,
+        applyExifOrientation: applyExifOrientation,
+      ),
+    );
+  }
+
+  /// Async version of [resizePng]. Runs in a separate isolate.
+  static Future<Uint8List> resizePngAsync({
+    required Uint8List pngBytes,
+    required int outputWidth,
+    required int outputHeight,
+    BicubicFilter filter = BicubicFilter.catmullRom,
+    EdgeMode edgeMode = EdgeMode.clamp,
+    double crop = 1.0,
+    CropAnchor cropAnchor = CropAnchor.center,
+    CropAspectRatio cropAspectRatio = CropAspectRatio.square,
+    double aspectRatioWidth = 1.0,
+    double aspectRatioHeight = 1.0,
+    int compressionLevel = 6,
+  }) {
+    return Isolate.run(
+      () => resizePng(
+        pngBytes: pngBytes,
+        outputWidth: outputWidth,
+        outputHeight: outputHeight,
+        filter: filter,
+        edgeMode: edgeMode,
+        crop: crop,
+        cropAnchor: cropAnchor,
+        cropAspectRatio: cropAspectRatio,
+        aspectRatioWidth: aspectRatioWidth,
+        aspectRatioHeight: aspectRatioHeight,
+        compressionLevel: compressionLevel,
+      ),
+    );
+  }
+
+  /// Async version of [resize]. Runs in a separate isolate.
+  static Future<Uint8List> resizeAsync({
+    required Uint8List bytes,
+    required int outputWidth,
+    required int outputHeight,
+    int quality = 95,
+    int compressionLevel = 6,
+    BicubicFilter filter = BicubicFilter.catmullRom,
+    EdgeMode edgeMode = EdgeMode.clamp,
+    double crop = 1.0,
+    CropAnchor cropAnchor = CropAnchor.center,
+    CropAspectRatio cropAspectRatio = CropAspectRatio.square,
+    double aspectRatioWidth = 1.0,
+    double aspectRatioHeight = 1.0,
+    bool applyExifOrientation = true,
+  }) {
+    return Isolate.run(
+      () => resize(
+        bytes: bytes,
+        outputWidth: outputWidth,
+        outputHeight: outputHeight,
+        quality: quality,
+        compressionLevel: compressionLevel,
+        filter: filter,
+        edgeMode: edgeMode,
+        crop: crop,
+        cropAnchor: cropAnchor,
+        cropAspectRatio: cropAspectRatio,
+        aspectRatioWidth: aspectRatioWidth,
+        aspectRatioHeight: aspectRatioHeight,
+        applyExifOrientation: applyExifOrientation,
+      ),
+    );
+  }
+
+  /// Async version of [resizeForModel]. Runs in a separate isolate.
+  static Future<Float32List> resizeForModelAsync({
+    required Uint8List bytes,
+    required int outputWidth,
+    required int outputHeight,
+    NormalizationType normalization = NormalizationType.none,
+    ChannelOrder channelOrder = ChannelOrder.rgb,
+    TensorLayout layout = TensorLayout.hwc,
+    BicubicFilter filter = BicubicFilter.catmullRom,
+    EdgeMode edgeMode = EdgeMode.clamp,
+    double crop = 1.0,
+    CropAnchor cropAnchor = CropAnchor.center,
+    CropAspectRatio cropAspectRatio = CropAspectRatio.square,
+    double aspectRatioWidth = 1.0,
+    double aspectRatioHeight = 1.0,
+    bool applyExifOrientation = true,
+    double meanR = 0.0,
+    double meanG = 0.0,
+    double meanB = 0.0,
+    double stdR = 1.0,
+    double stdG = 1.0,
+    double stdB = 1.0,
+  }) {
+    return Isolate.run(
+      () => resizeForModel(
+        bytes: bytes,
+        outputWidth: outputWidth,
+        outputHeight: outputHeight,
+        normalization: normalization,
+        channelOrder: channelOrder,
+        layout: layout,
+        filter: filter,
+        edgeMode: edgeMode,
+        crop: crop,
+        cropAnchor: cropAnchor,
+        cropAspectRatio: cropAspectRatio,
+        aspectRatioWidth: aspectRatioWidth,
+        aspectRatioHeight: aspectRatioHeight,
+        applyExifOrientation: applyExifOrientation,
+        meanR: meanR,
+        meanG: meanG,
+        meanB: meanB,
+        stdR: stdR,
+        stdG: stdG,
+        stdB: stdB,
+      ),
+    );
   }
 }
