@@ -14,6 +14,13 @@ Complete API reference for `flutter_bicubic_resize`.
   - [resize](#resize) / [resizeAsync](#async-methods)
   - [resizeForModel](#resizeformodel) / [resizeForModelAsync](#async-methods)
   - [detectFormat](#detectformat)
+  - [getImageInfo](#getimageinfo) / [getImageInfoAsync](#async-methods)
+  - [resizeFile](#resizefile) / [resizeFileAsync](#async-methods)
+  - [resizeFileToFile](#resizefiletofile) / [resizeFileToFileAsync](#async-methods)
+  - [jpegToPng](#jpegtopng) / [jpegToPngAsync](#async-methods)
+  - [pngToJpeg](#pngtojpeg) / [pngToJpegAsync](#async-methods)
+  - [convertFormat](#convertformat) / [convertFormatAsync](#async-methods)
+- [BicubicImageInfo](#bicubicimageinfo)
 - [Async Methods](#async-methods)
 - [Enums](#enums)
   - [BicubicFilter](#bicubicfilter)
@@ -395,6 +402,207 @@ static ImageFormat? detectFormat(Uint8List bytes)
 
 ---
 
+### getImageInfo
+
+Read image dimensions, format, channels, and EXIF orientation without decoding pixel data. Uses `stbi_info_from_memory()` internally — very fast and lightweight.
+
+```dart
+static BicubicImageInfo getImageInfo(Uint8List bytes)
+```
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `bytes` | `Uint8List` | Yes | Image data (JPEG or PNG) |
+
+**Returns:** `BicubicImageInfo` containing width, height, channels, format, and EXIF orientation.
+
+**Throws:** `UnsupportedImageFormatException` if format is not JPEG or PNG.
+
+**Example:**
+
+```dart
+final info = BicubicResizer.getImageInfo(imageBytes);
+print('${info.width}x${info.height}');               // Raw dimensions
+print('${info.orientedWidth}x${info.orientedHeight}'); // After EXIF rotation
+print('Format: ${info.format}');                       // ImageFormat.jpeg or .png
+print('Channels: ${info.channels}');                   // 1, 3, or 4
+print('EXIF: ${info.exifOrientation}');                // 1-8
+```
+
+---
+
+### resizeFile
+
+Resize image file and return bytes. Reads the file at `inputPath`, auto-detects format, resizes, and returns the result.
+
+```dart
+static Uint8List resizeFile({
+  required String inputPath,
+  required int outputWidth,
+  required int outputHeight,
+  int quality = 95,
+  int compressionLevel = 6,
+  BicubicFilter filter = BicubicFilter.catmullRom,
+  EdgeMode edgeMode = EdgeMode.clamp,
+  double crop = 1.0,
+  CropAnchor cropAnchor = CropAnchor.center,
+  CropAspectRatio cropAspectRatio = CropAspectRatio.square,
+  double aspectRatioWidth = 1.0,
+  double aspectRatioHeight = 1.0,
+  bool applyExifOrientation = true,
+})
+```
+
+**Parameters:** Same as [resize](#resize), plus:
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `inputPath` | `String` | Yes | Path to the input image file (JPEG or PNG) |
+
+**Returns:** `Uint8List` - Resized image in the same format as input.
+
+---
+
+### resizeFileToFile
+
+Resize image file and save to output path. Reads the file at `inputPath`, resizes, and writes the result to `outputPath`.
+
+```dart
+static void resizeFileToFile({
+  required String inputPath,
+  required String outputPath,
+  required int outputWidth,
+  required int outputHeight,
+  // ... same options as resizeFile
+})
+```
+
+**Example:**
+
+```dart
+BicubicResizer.resizeFileToFile(
+  inputPath: '/photos/original.jpg',
+  outputPath: '/photos/thumbnail.jpg',
+  outputWidth: 200,
+  outputHeight: 200,
+);
+```
+
+---
+
+### jpegToPng
+
+Convert JPEG to PNG without resizing. Decodes JPEG, optionally applies EXIF orientation, and encodes as PNG.
+
+```dart
+static Uint8List jpegToPng({
+  required Uint8List jpegBytes,
+  int compressionLevel = 6,
+  bool applyExifOrientation = true,
+})
+```
+
+**Parameters:**
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `jpegBytes` | `Uint8List` | Yes | - | JPEG encoded image data |
+| `compressionLevel` | `int` | No | 6 | PNG compression level (0-9) |
+| `applyExifOrientation` | `bool` | No | `true` | Whether to apply EXIF orientation |
+
+**Returns:** `Uint8List` - PNG encoded data.
+
+---
+
+### pngToJpeg
+
+Convert PNG to JPEG without resizing. Decodes PNG, drops alpha channel, and encodes as JPEG.
+
+```dart
+static Uint8List pngToJpeg({
+  required Uint8List pngBytes,
+  int quality = 95,
+})
+```
+
+**Parameters:**
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `pngBytes` | `Uint8List` | Yes | - | PNG encoded image data |
+| `quality` | `int` | No | 95 | JPEG output quality (1-100) |
+
+**Returns:** `Uint8List` - JPEG encoded data.
+
+**Note:** Alpha channel is discarded during conversion.
+
+---
+
+### convertFormat
+
+Convert between JPEG and PNG formats with auto-detection. If the input already matches the target format, the original bytes are returned unchanged.
+
+```dart
+static Uint8List convertFormat({
+  required Uint8List bytes,
+  required ImageFormat targetFormat,
+  int quality = 95,
+  int compressionLevel = 6,
+  bool applyExifOrientation = true,
+})
+```
+
+**Parameters:**
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `bytes` | `Uint8List` | Yes | - | Image data (JPEG or PNG) |
+| `targetFormat` | `ImageFormat` | Yes | - | Desired output format |
+| `quality` | `int` | No | 95 | JPEG quality (used when target is JPEG) |
+| `compressionLevel` | `int` | No | 6 | PNG compression (used when target is PNG) |
+| `applyExifOrientation` | `bool` | No | `true` | EXIF orientation (JPEG input only) |
+
+**Returns:** `Uint8List` - Converted image data.
+
+**Throws:** `UnsupportedImageFormatException` if input format is not JPEG or PNG.
+
+**Example:**
+
+```dart
+// Auto-detect and convert to PNG
+final pngBytes = BicubicResizer.convertFormat(
+  bytes: imageBytes,
+  targetFormat: ImageFormat.png,
+);
+```
+
+---
+
+## BicubicImageInfo
+
+Immutable class containing image metadata obtained without full pixel decoding.
+
+```dart
+class BicubicImageInfo {
+  final int width;            // Image width (before EXIF)
+  final int height;           // Image height (before EXIF)
+  final int channels;         // Color channels (1=gray, 3=RGB, 4=RGBA)
+  final ImageFormat format;   // Detected format (jpeg or png)
+  final int exifOrientation;  // EXIF orientation (1-8, JPEG only)
+
+  int get orientedWidth;      // Width after EXIF rotation
+  int get orientedHeight;     // Height after EXIF rotation
+}
+```
+
+**EXIF orientation behavior:**
+- Orientations 1-4: `orientedWidth == width`, `orientedHeight == height`
+- Orientations 5-8 (90°/270° rotations): width and height are swapped
+
+---
+
 ## Async Methods
 
 All public resize methods have async counterparts that run in a separate isolate via `Isolate.run()`, keeping the UI thread free. Each async method accepts the same parameters as its sync version.
@@ -407,6 +615,12 @@ All public resize methods have async counterparts that run in a separate isolate
 | `resizeRgba()` | `resizeRgbaAsync()` | `Future<Uint8List>` |
 | `resize()` | `resizeAsync()` | `Future<Uint8List>` |
 | `resizeForModel()` | `resizeForModelAsync()` | `Future<Float32List>` |
+| `getImageInfo()` | `getImageInfoAsync()` | `Future<BicubicImageInfo>` |
+| `resizeFile()` | `resizeFileAsync()` | `Future<Uint8List>` |
+| `resizeFileToFile()` | `resizeFileToFileAsync()` | `Future<void>` |
+| `jpegToPng()` | `jpegToPngAsync()` | `Future<Uint8List>` |
+| `pngToJpeg()` | `pngToJpegAsync()` | `Future<Uint8List>` |
+| `convertFormat()` | `convertFormatAsync()` | `Future<Uint8List>` |
 
 **Example:**
 
@@ -656,11 +870,12 @@ Maps native C error codes to descriptive Dart enum values.
 
 ```dart
 enum BicubicNativeError {
-  nullInput,     // code: -1
-  invalidDims,   // code: -2
-  decodeFailed,  // code: -3
-  allocFailed,   // code: -4
-  encodeFailed,  // code: -5
+  nullInput,      // code: -1
+  invalidDims,    // code: -2
+  decodeFailed,   // code: -3
+  allocFailed,    // code: -4
+  encodeFailed,   // code: -5
+  formatUnknown,  // code: -6
 }
 ```
 
@@ -671,6 +886,7 @@ enum BicubicNativeError {
 | `decodeFailed` | -3 | Image decoding failed (corrupt or unsupported data) |
 | `allocFailed` | -4 | Memory allocation failed |
 | `encodeFailed` | -5 | JPEG/PNG encoding failed |
+| `formatUnknown` | -6 | Unknown or unsupported image format |
 
 **Static method:**
 

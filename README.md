@@ -18,6 +18,9 @@
 - **ML preprocessing** - tensor normalization (ImageNet, centered, custom), HWC/CHW layouts, RGB/BGR ordering
 - **Async wrappers** - all methods available as `*Async()` variants using `Isolate.run()`
 - **Specific error codes** - descriptive `BicubicResizeException` with native error mapping
+- **Image info** - read dimensions, format, and EXIF orientation without decoding pixels
+- **File I/O** - `resizeFile()` and `resizeFileToFile()` for path-based workflows
+- **Format conversion** - JPEG↔PNG conversion without resizing
 - Zero external Dart dependencies (only `ffi`)
 
 ## Installation
@@ -26,7 +29,7 @@ Add to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  flutter_bicubic_resize: ^1.4.0
+  flutter_bicubic_resize: ^1.5.0
 ```
 
 Or run:
@@ -244,6 +247,58 @@ Available layouts:
 - `TensorLayout.hwc` - Height, Width, Channels (TensorFlow/TFLite)
 - `TensorLayout.chw` - Channels, Height, Width (PyTorch)
 
+### Get image info (without decoding)
+
+Read image dimensions, format, and EXIF orientation without decoding pixel data:
+
+```dart
+final info = BicubicResizer.getImageInfo(imageBytes);
+print('${info.width}x${info.height}');          // Raw dimensions
+print('${info.orientedWidth}x${info.orientedHeight}'); // After EXIF rotation
+print('Format: ${info.format}');                 // ImageFormat.jpeg or .png
+print('Channels: ${info.channels}');             // 1, 3, or 4
+print('EXIF orientation: ${info.exifOrientation}'); // 1-8
+```
+
+### Resize from file path
+
+Convenience methods for file-based workflows:
+
+```dart
+// Read file, resize, get bytes
+final resized = BicubicResizer.resizeFile(
+  inputPath: '/path/to/photo.jpg',
+  outputWidth: 800,
+  outputHeight: 600,
+);
+
+// Read file, resize, save to output file
+BicubicResizer.resizeFileToFile(
+  inputPath: '/path/to/photo.jpg',
+  outputPath: '/path/to/thumbnail.jpg',
+  outputWidth: 200,
+  outputHeight: 200,
+);
+```
+
+### Format conversion (JPEG ↔ PNG)
+
+Convert between formats without resizing:
+
+```dart
+// JPEG to PNG
+final pngBytes = BicubicResizer.jpegToPng(jpegBytes: jpegData);
+
+// PNG to JPEG (alpha channel is discarded)
+final jpegBytes = BicubicResizer.pngToJpeg(pngBytes: pngData, quality: 90);
+
+// Auto-detect and convert
+final converted = BicubicResizer.convertFormat(
+  bytes: imageBytes,
+  targetFormat: ImageFormat.png,
+);
+```
+
 ### Complete example with all options
 
 ```dart
@@ -298,7 +353,7 @@ final Float32List tensor = await BicubicResizer.resizeForModelAsync(
 );
 ```
 
-Available async methods: `resizeJpegAsync`, `resizePngAsync`, `resizeRgbAsync`, `resizeRgbaAsync`, `resizeAsync`, `resizeForModelAsync`.
+Available async methods: `resizeJpegAsync`, `resizePngAsync`, `resizeRgbAsync`, `resizeRgbaAsync`, `resizeAsync`, `resizeForModelAsync`, `getImageInfoAsync`, `resizeFileAsync`, `resizeFileToFileAsync`, `jpegToPngAsync`, `pngToJpegAsync`, `convertFormatAsync`.
 
 ### Error handling
 
@@ -325,6 +380,7 @@ try {
 | `decodeFailed` | -3 | Corrupt or unsupported image data |
 | `allocFailed` | -4 | Memory allocation failed |
 | `encodeFailed` | -5 | JPEG/PNG encoding failed |
+| `formatUnknown` | -6 | Unknown or unsupported image format |
 
 ## Why?
 

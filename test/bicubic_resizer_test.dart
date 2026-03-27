@@ -456,8 +456,8 @@ void main() {
   // ============================================================================
 
   group('BicubicNativeError', () {
-    test('has exactly 5 error codes', () {
-      expect(BicubicNativeError.values.length, equals(5));
+    test('has exactly 6 error codes', () {
+      expect(BicubicNativeError.values.length, equals(6));
     });
 
     test('all error codes have correct values', () {
@@ -466,6 +466,7 @@ void main() {
       expect(BicubicNativeError.decodeFailed.code, equals(-3));
       expect(BicubicNativeError.allocFailed.code, equals(-4));
       expect(BicubicNativeError.encodeFailed.code, equals(-5));
+      expect(BicubicNativeError.formatUnknown.code, equals(-6));
     });
 
     test('all codes are unique', () {
@@ -506,6 +507,10 @@ void main() {
         BicubicNativeError.fromCode(-5),
         equals(BicubicNativeError.encodeFailed),
       );
+      expect(
+        BicubicNativeError.fromCode(-6),
+        equals(BicubicNativeError.formatUnknown),
+      );
     });
 
     test('fromCode returns null for success code 0', () {
@@ -518,7 +523,7 @@ void main() {
     });
 
     test('fromCode returns null for unknown negative codes', () {
-      expect(BicubicNativeError.fromCode(-6), isNull);
+      expect(BicubicNativeError.fromCode(-7), isNull);
       expect(BicubicNativeError.fromCode(-99), isNull);
       expect(BicubicNativeError.fromCode(-1000), isNull);
     });
@@ -626,25 +631,24 @@ void main() {
     });
 
     test('can be caught specifically as BicubicResizeException', () {
-      BicubicResizeException? caught;
+      late BicubicResizeException caught;
       try {
         throw BicubicResizeException(-5);
       } on BicubicResizeException catch (e) {
         caught = e;
       }
 
-      expect(caught, isNotNull);
-      expect(caught!.nativeCode, equals(-5));
+      expect(caught.nativeCode, equals(-5));
       expect(caught.error, equals(BicubicNativeError.encodeFailed));
     });
 
     test('each known code produces a distinct message', () {
       final messages = <String>{};
-      for (int code = -1; code >= -5; code--) {
+      for (int code = -1; code >= -6; code--) {
         final exception = BicubicResizeException(code);
         messages.add(exception.message);
       }
-      expect(messages.length, equals(5));
+      expect(messages.length, equals(6));
     });
   });
 
@@ -937,6 +941,215 @@ void main() {
     test('contains jpeg and png', () {
       expect(ImageFormat.values, contains(ImageFormat.jpeg));
       expect(ImageFormat.values, contains(ImageFormat.png));
+    });
+  });
+
+  // ============================================================================
+  // BicubicImageInfo
+  // ============================================================================
+
+  group('BicubicImageInfo', () {
+    test('creates with all fields', () {
+      const info = BicubicImageInfo(
+        width: 1920,
+        height: 1080,
+        channels: 3,
+        format: ImageFormat.jpeg,
+        exifOrientation: 1,
+      );
+
+      expect(info.width, equals(1920));
+      expect(info.height, equals(1080));
+      expect(info.channels, equals(3));
+      expect(info.format, equals(ImageFormat.jpeg));
+      expect(info.exifOrientation, equals(1));
+    });
+
+    test('orientedWidth/orientedHeight for normal orientation (1)', () {
+      const info = BicubicImageInfo(
+        width: 1920,
+        height: 1080,
+        channels: 3,
+        format: ImageFormat.jpeg,
+        exifOrientation: 1,
+      );
+
+      expect(info.orientedWidth, equals(1920));
+      expect(info.orientedHeight, equals(1080));
+    });
+
+    test('orientedWidth/orientedHeight for 90 CW rotation (6)', () {
+      const info = BicubicImageInfo(
+        width: 1920,
+        height: 1080,
+        channels: 3,
+        format: ImageFormat.jpeg,
+        exifOrientation: 6,
+      );
+
+      expect(info.orientedWidth, equals(1080));
+      expect(info.orientedHeight, equals(1920));
+    });
+
+    test('orientedWidth/orientedHeight for 180 rotation (3)', () {
+      const info = BicubicImageInfo(
+        width: 1920,
+        height: 1080,
+        channels: 3,
+        format: ImageFormat.jpeg,
+        exifOrientation: 3,
+      );
+
+      expect(info.orientedWidth, equals(1920));
+      expect(info.orientedHeight, equals(1080));
+    });
+
+    test('orientedWidth/orientedHeight for 90 CCW rotation (8)', () {
+      const info = BicubicImageInfo(
+        width: 1920,
+        height: 1080,
+        channels: 3,
+        format: ImageFormat.jpeg,
+        exifOrientation: 8,
+      );
+
+      expect(info.orientedWidth, equals(1080));
+      expect(info.orientedHeight, equals(1920));
+    });
+
+    test('orientedWidth/orientedHeight for transpose (5)', () {
+      const info = BicubicImageInfo(
+        width: 800,
+        height: 600,
+        channels: 3,
+        format: ImageFormat.png,
+        exifOrientation: 5,
+      );
+
+      expect(info.orientedWidth, equals(600));
+      expect(info.orientedHeight, equals(800));
+    });
+
+    test('orientedWidth/orientedHeight for flip horizontal (2)', () {
+      const info = BicubicImageInfo(
+        width: 800,
+        height: 600,
+        channels: 4,
+        format: ImageFormat.png,
+        exifOrientation: 2,
+      );
+
+      expect(info.orientedWidth, equals(800));
+      expect(info.orientedHeight, equals(600));
+    });
+
+    test('toString contains dimensions and format', () {
+      const info = BicubicImageInfo(
+        width: 100,
+        height: 200,
+        channels: 3,
+        format: ImageFormat.jpeg,
+        exifOrientation: 6,
+      );
+
+      final str = info.toString();
+      expect(str, contains('100'));
+      expect(str, contains('200'));
+      expect(str, contains('jpeg'));
+      expect(str, contains('6'));
+    });
+  });
+
+  // ============================================================================
+  // BicubicNativeError - formatUnknown
+  // ============================================================================
+
+  group('BicubicNativeError - formatUnknown', () {
+    test('has exactly 6 error codes', () {
+      expect(BicubicNativeError.values.length, equals(6));
+    });
+
+    test('formatUnknown has code -6', () {
+      expect(BicubicNativeError.formatUnknown.code, equals(-6));
+    });
+
+    test('fromCode returns formatUnknown for -6', () {
+      expect(
+        BicubicNativeError.fromCode(-6),
+        equals(BicubicNativeError.formatUnknown),
+      );
+    });
+  });
+
+  // ============================================================================
+  // convertFormat validation
+  // ============================================================================
+
+  group('BicubicResizer - convertFormat validation', () {
+    test('throws UnsupportedImageFormatException for unknown format', () {
+      final unknown = Uint8List.fromList([0x00, 0x01, 0x02, 0x03, 0x04]);
+
+      expect(
+        () => BicubicResizer.convertFormat(
+          bytes: unknown,
+          targetFormat: ImageFormat.jpeg,
+        ),
+        throwsA(isA<UnsupportedImageFormatException>()),
+      );
+    });
+
+    test('returns same bytes when source matches target (JPEG -> JPEG)', () {
+      final jpegHeader =
+          Uint8List.fromList([0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10]);
+
+      final result = BicubicResizer.convertFormat(
+        bytes: jpegHeader,
+        targetFormat: ImageFormat.jpeg,
+      );
+
+      expect(identical(result, jpegHeader), isTrue);
+    });
+
+    test('returns same bytes when source matches target (PNG -> PNG)', () {
+      final pngHeader =
+          Uint8List.fromList([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A]);
+
+      final result = BicubicResizer.convertFormat(
+        bytes: pngHeader,
+        targetFormat: ImageFormat.png,
+      );
+
+      expect(identical(result, pngHeader), isTrue);
+    });
+  });
+
+  // ============================================================================
+  // Async method existence - new methods
+  // ============================================================================
+
+  group('New async method signatures', () {
+    test('getImageInfoAsync exists', () {
+      expect(BicubicResizer.getImageInfoAsync, isA<Function>());
+    });
+
+    test('resizeFileAsync exists', () {
+      expect(BicubicResizer.resizeFileAsync, isA<Function>());
+    });
+
+    test('resizeFileToFileAsync exists', () {
+      expect(BicubicResizer.resizeFileToFileAsync, isA<Function>());
+    });
+
+    test('jpegToPngAsync exists', () {
+      expect(BicubicResizer.jpegToPngAsync, isA<Function>());
+    });
+
+    test('pngToJpegAsync exists', () {
+      expect(BicubicResizer.pngToJpegAsync, isA<Function>());
+    });
+
+    test('convertFormatAsync exists', () {
+      expect(BicubicResizer.convertFormatAsync, isA<Function>());
     });
   });
 

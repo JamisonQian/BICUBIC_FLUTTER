@@ -184,6 +184,68 @@ typedef BicubicResizeToRgbDart = int Function(
 );
 
 // ============================================================================
+// C function signatures - Image info
+// ============================================================================
+
+typedef BicubicGetImageInfoNative = Int32 Function(
+  Pointer<Uint8> inputData,
+  Int32 inputSize,
+  Pointer<Int32> outWidth,
+  Pointer<Int32> outHeight,
+  Pointer<Int32> outChannels,
+  Pointer<Int32> outFormat,
+  Pointer<Int32> outOrientation,
+);
+
+typedef BicubicGetImageInfoDart = int Function(
+  Pointer<Uint8> inputData,
+  int inputSize,
+  Pointer<Int32> outWidth,
+  Pointer<Int32> outHeight,
+  Pointer<Int32> outChannels,
+  Pointer<Int32> outFormat,
+  Pointer<Int32> outOrientation,
+);
+
+// ============================================================================
+// C function signatures - Format conversion
+// ============================================================================
+
+typedef BicubicJpegToPngNative = Int32 Function(
+  Pointer<Uint8> inputData,
+  Int32 inputSize,
+  Int32 compressionLevel,
+  Int32 applyExif,
+  Pointer<Pointer<Uint8>> outputData,
+  Pointer<Int32> outputSize,
+);
+
+typedef BicubicJpegToPngDart = int Function(
+  Pointer<Uint8> inputData,
+  int inputSize,
+  int compressionLevel,
+  int applyExif,
+  Pointer<Pointer<Uint8>> outputData,
+  Pointer<Int32> outputSize,
+);
+
+typedef BicubicPngToJpegNative = Int32 Function(
+  Pointer<Uint8> inputData,
+  Int32 inputSize,
+  Int32 quality,
+  Pointer<Pointer<Uint8>> outputData,
+  Pointer<Int32> outputSize,
+);
+
+typedef BicubicPngToJpegDart = int Function(
+  Pointer<Uint8> inputData,
+  int inputSize,
+  int quality,
+  Pointer<Pointer<Uint8>> outputData,
+  Pointer<Int32> outputSize,
+);
+
+// ============================================================================
 // C function signatures - Memory management
 // ============================================================================
 
@@ -210,6 +272,13 @@ class NativeBindings {
 
   // Raw RGB output (for ML preprocessing)
   late final BicubicResizeToRgbDart bicubicResizeToRgb;
+
+  // Image info
+  late final BicubicGetImageInfoDart bicubicGetImageInfo;
+
+  // Format conversion
+  late final BicubicJpegToPngDart bicubicJpegToPng;
+  late final BicubicPngToJpegDart bicubicPngToJpeg;
 
   // Memory management
   late final FreeBufferDart freeBuffer;
@@ -259,6 +328,21 @@ class NativeBindings {
         .lookup<NativeFunction<BicubicResizeToRgbNative>>(
             'bicubic_resize_to_rgb')
         .asFunction<BicubicResizeToRgbDart>();
+
+    // Image info
+    bicubicGetImageInfo = _library
+        .lookup<NativeFunction<BicubicGetImageInfoNative>>(
+            'bicubic_get_image_info')
+        .asFunction<BicubicGetImageInfoDart>();
+
+    // Format conversion
+    bicubicJpegToPng = _library
+        .lookup<NativeFunction<BicubicJpegToPngNative>>('bicubic_jpeg_to_png')
+        .asFunction<BicubicJpegToPngDart>();
+
+    bicubicPngToJpeg = _library
+        .lookup<NativeFunction<BicubicPngToJpegNative>>('bicubic_png_to_jpeg')
+        .asFunction<BicubicPngToJpegDart>();
 
     // Memory management
     freeBuffer = _library

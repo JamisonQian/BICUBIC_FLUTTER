@@ -1,4 +1,5 @@
 import 'dart:ffi';
+import 'dart:io';
 import 'dart:isolate';
 import 'dart:typed_data';
 
@@ -70,6 +71,55 @@ enum ImageFormat {
   png,
 }
 
+/// Image metadata obtained without full pixel decoding.
+///
+/// Contains dimensions, channel count, format, and EXIF orientation.
+/// Use [orientedWidth] and [orientedHeight] to get dimensions after
+/// EXIF orientation is applied.
+///
+/// ```dart
+/// final info = BicubicResizer.getImageInfo(bytes);
+/// print('${info.width}x${info.height} ${info.format}');
+/// print('Oriented: ${info.orientedWidth}x${info.orientedHeight}');
+/// ```
+class BicubicImageInfo {
+  /// Image width in pixels (before EXIF orientation).
+  final int width;
+
+  /// Image height in pixels (before EXIF orientation).
+  final int height;
+
+  /// Number of color channels (1=gray, 3=RGB, 4=RGBA).
+  final int channels;
+
+  /// Detected image format.
+  final ImageFormat format;
+
+  /// EXIF orientation value (1-8). Only meaningful for JPEG.
+  /// 1 = normal (no transformation needed).
+  final int exifOrientation;
+
+  const BicubicImageInfo({
+    required this.width,
+    required this.height,
+    required this.channels,
+    required this.format,
+    required this.exifOrientation,
+  });
+
+  /// Width after applying EXIF orientation.
+  /// For orientations 5-8 (90/270 degree rotations), width and height are swapped.
+  int get orientedWidth => exifOrientation >= 5 ? height : width;
+
+  /// Height after applying EXIF orientation.
+  /// For orientations 5-8 (90/270 degree rotations), width and height are swapped.
+  int get orientedHeight => exifOrientation >= 5 ? width : height;
+
+  @override
+  String toString() => 'BicubicImageInfo(${width}x$height, channels=$channels, '
+      'format=$format, exifOrientation=$exifOrientation)';
+}
+
 /// Exception thrown when an unsupported image format is detected.
 ///
 /// This library only supports JPEG and PNG formats.
@@ -111,7 +161,10 @@ enum BicubicNativeError {
   allocFailed(-4, 'Memory allocation failed in native code'),
 
   /// Image encoding failed (JPEG/PNG write error).
-  encodeFailed(-5, 'Image encoding failed');
+  encodeFailed(-5, 'Image encoding failed'),
+
+  /// Unknown or unsupported image format.
+  formatUnknown(-6, 'Unknown or unsupported image format');
 
   /// The native error code value.
   final int code;
@@ -914,6 +967,420 @@ class BicubicResizer {
       calloc.free(outputDataPtr);
       calloc.free(outputSizePtr);
     }
+  }
+
+  // ============================================================================
+  // Image info (lightweight - no full pixel decode)
+  // ============================================================================
+
+  /// Get image dimensions, format and EXIF orientation without decoding pixels.
+  ///
+  /// This is a lightweight operation that only reads image headers,
+  /// making it much faster than a full decode when you only need metadata.
+  ///
+  /// [bytes] - Image data (JPEG or PNG)
+  ///
+  /// Returns [BicubicImageInfo] with dimensions, channels, format and EXIF orientation.
+  ///
+  /// Throws [UnsupportedImageFormatException] if the format is not JPEG or PNG.
+  /// Throws [BicubicResizeException] if headers cannot be parsed.
+  static BicubicImageInfo getImageInfo(Uint8List bytes) {
+    final inputPtr = calloc<Uint8>(bytes.length);
+    final widthPtr = calloc<Int32>();
+    final heightPtr = calloc<Int32>();
+    final channelsPtr = calloc<Int32>();
+    final formatPtr = calloc<Int32>();
+    final orientationPtr = calloc<Int32>();
+
+    try {
+      inputPtr.asTypedList(bytes.length).setAll(0, bytes);
+
+      final result = NativeBindings.instance.bicubicGetImageInfo(
+        inputPtr,
+        bytes.length,
+        widthPtr,
+        heightPtr,
+        channelsPtr,
+        formatPtr,
+        orientationPtr,
+      );
+
+      if (result == -6) {
+        throw UnsupportedImageFormatException(bytes: bytes);
+      }
+      _throwIfError(result);
+
+      final formatValue = formatPtr.value;
+      final ImageFormat format;
+      switch (formatValue) {
+        case 1:
+          format = ImageFormat.jpeg;
+          break;
+        case 2:
+          format = ImageFormat.png;
+          break;
+        default:
+          throw UnsupportedImageFormatException(bytes: bytes);
+      }
+
+      return BicubicImageInfo(
+        width: widthPtr.value,
+        height: heightPtr.value,
+        channels: channelsPtr.value,
+        format: format,
+        exifOrientation: orientationPtr.value,
+      );
+    } finally {
+      calloc.free(inputPtr);
+      calloc.free(widthPtr);
+      calloc.free(heightPtr);
+      calloc.free(channelsPtr);
+      calloc.free(formatPtr);
+      calloc.free(orientationPtr);
+    }
+  }
+
+  /// Async version of [getImageInfo]. Runs in a separate isolate.
+  static Future<BicubicImageInfo> getImageInfoAsync(Uint8List bytes) {
+    return Isolate.run(() => getImageInfo(bytes));
+  }
+
+  // ============================================================================
+  // File I/O convenience methods
+  // ============================================================================
+
+  /// Resize image file and return bytes.
+  ///
+  /// Reads the file at [inputPath], resizes it, and returns the result.
+  /// All resize parameters are the same as [resize].
+  ///
+  /// [inputPath] - Path to the input image file (JPEG or PNG)
+  ///
+  /// Returns resized image data in the same format as input.
+  static Uint8List resizeFile({
+    required String inputPath,
+    required int outputWidth,
+    required int outputHeight,
+    int quality = 95,
+    int compressionLevel = 6,
+    BicubicFilter filter = BicubicFilter.catmullRom,
+    EdgeMode edgeMode = EdgeMode.clamp,
+    double crop = 1.0,
+    CropAnchor cropAnchor = CropAnchor.center,
+    CropAspectRatio cropAspectRatio = CropAspectRatio.square,
+    double aspectRatioWidth = 1.0,
+    double aspectRatioHeight = 1.0,
+    bool applyExifOrientation = true,
+  }) {
+    final bytes = File(inputPath).readAsBytesSync();
+    return resize(
+      bytes: bytes,
+      outputWidth: outputWidth,
+      outputHeight: outputHeight,
+      quality: quality,
+      compressionLevel: compressionLevel,
+      filter: filter,
+      edgeMode: edgeMode,
+      crop: crop,
+      cropAnchor: cropAnchor,
+      cropAspectRatio: cropAspectRatio,
+      aspectRatioWidth: aspectRatioWidth,
+      aspectRatioHeight: aspectRatioHeight,
+      applyExifOrientation: applyExifOrientation,
+    );
+  }
+
+  /// Resize image file and save to output path.
+  ///
+  /// Reads the file at [inputPath], resizes it, and writes the result to [outputPath].
+  ///
+  /// [inputPath] - Path to the input image file (JPEG or PNG)
+  /// [outputPath] - Path where the resized image will be saved
+  static void resizeFileToFile({
+    required String inputPath,
+    required String outputPath,
+    required int outputWidth,
+    required int outputHeight,
+    int quality = 95,
+    int compressionLevel = 6,
+    BicubicFilter filter = BicubicFilter.catmullRom,
+    EdgeMode edgeMode = EdgeMode.clamp,
+    double crop = 1.0,
+    CropAnchor cropAnchor = CropAnchor.center,
+    CropAspectRatio cropAspectRatio = CropAspectRatio.square,
+    double aspectRatioWidth = 1.0,
+    double aspectRatioHeight = 1.0,
+    bool applyExifOrientation = true,
+  }) {
+    final result = resizeFile(
+      inputPath: inputPath,
+      outputWidth: outputWidth,
+      outputHeight: outputHeight,
+      quality: quality,
+      compressionLevel: compressionLevel,
+      filter: filter,
+      edgeMode: edgeMode,
+      crop: crop,
+      cropAnchor: cropAnchor,
+      cropAspectRatio: cropAspectRatio,
+      aspectRatioWidth: aspectRatioWidth,
+      aspectRatioHeight: aspectRatioHeight,
+      applyExifOrientation: applyExifOrientation,
+    );
+    File(outputPath).writeAsBytesSync(result);
+  }
+
+  /// Async version of [resizeFile]. Runs in a separate isolate.
+  static Future<Uint8List> resizeFileAsync({
+    required String inputPath,
+    required int outputWidth,
+    required int outputHeight,
+    int quality = 95,
+    int compressionLevel = 6,
+    BicubicFilter filter = BicubicFilter.catmullRom,
+    EdgeMode edgeMode = EdgeMode.clamp,
+    double crop = 1.0,
+    CropAnchor cropAnchor = CropAnchor.center,
+    CropAspectRatio cropAspectRatio = CropAspectRatio.square,
+    double aspectRatioWidth = 1.0,
+    double aspectRatioHeight = 1.0,
+    bool applyExifOrientation = true,
+  }) {
+    return Isolate.run(
+      () => resizeFile(
+        inputPath: inputPath,
+        outputWidth: outputWidth,
+        outputHeight: outputHeight,
+        quality: quality,
+        compressionLevel: compressionLevel,
+        filter: filter,
+        edgeMode: edgeMode,
+        crop: crop,
+        cropAnchor: cropAnchor,
+        cropAspectRatio: cropAspectRatio,
+        aspectRatioWidth: aspectRatioWidth,
+        aspectRatioHeight: aspectRatioHeight,
+        applyExifOrientation: applyExifOrientation,
+      ),
+    );
+  }
+
+  /// Async version of [resizeFileToFile]. Runs in a separate isolate.
+  static Future<void> resizeFileToFileAsync({
+    required String inputPath,
+    required String outputPath,
+    required int outputWidth,
+    required int outputHeight,
+    int quality = 95,
+    int compressionLevel = 6,
+    BicubicFilter filter = BicubicFilter.catmullRom,
+    EdgeMode edgeMode = EdgeMode.clamp,
+    double crop = 1.0,
+    CropAnchor cropAnchor = CropAnchor.center,
+    CropAspectRatio cropAspectRatio = CropAspectRatio.square,
+    double aspectRatioWidth = 1.0,
+    double aspectRatioHeight = 1.0,
+    bool applyExifOrientation = true,
+  }) {
+    return Isolate.run(
+      () => resizeFileToFile(
+        inputPath: inputPath,
+        outputPath: outputPath,
+        outputWidth: outputWidth,
+        outputHeight: outputHeight,
+        quality: quality,
+        compressionLevel: compressionLevel,
+        filter: filter,
+        edgeMode: edgeMode,
+        crop: crop,
+        cropAnchor: cropAnchor,
+        cropAspectRatio: cropAspectRatio,
+        aspectRatioWidth: aspectRatioWidth,
+        aspectRatioHeight: aspectRatioHeight,
+        applyExifOrientation: applyExifOrientation,
+      ),
+    );
+  }
+
+  // ============================================================================
+  // Format conversion (JPEG <-> PNG, no resize)
+  // ============================================================================
+
+  /// Convert JPEG to PNG without resizing.
+  ///
+  /// [jpegBytes] - JPEG encoded image data
+  /// [compressionLevel] - PNG compression level (0-9, default 6)
+  /// [applyExifOrientation] - Whether to apply EXIF orientation (default: true)
+  ///
+  /// Returns PNG encoded data.
+  static Uint8List jpegToPng({
+    required Uint8List jpegBytes,
+    int compressionLevel = 6,
+    bool applyExifOrientation = true,
+  }) {
+    final inputPtr = calloc<Uint8>(jpegBytes.length);
+    final outputDataPtr = calloc<Pointer<Uint8>>();
+    final outputSizePtr = calloc<Int32>();
+
+    try {
+      inputPtr.asTypedList(jpegBytes.length).setAll(0, jpegBytes);
+
+      final result = NativeBindings.instance.bicubicJpegToPng(
+        inputPtr,
+        jpegBytes.length,
+        compressionLevel,
+        applyExifOrientation ? 1 : 0,
+        outputDataPtr,
+        outputSizePtr,
+      );
+
+      _throwIfError(result);
+
+      final outputData = outputDataPtr.value;
+      final outputSize = outputSizePtr.value;
+
+      final resultBytes = Uint8List.fromList(
+        outputData.asTypedList(outputSize),
+      );
+
+      NativeBindings.instance.freeBuffer(outputData);
+
+      return resultBytes;
+    } finally {
+      calloc.free(inputPtr);
+      calloc.free(outputDataPtr);
+      calloc.free(outputSizePtr);
+    }
+  }
+
+  /// Convert PNG to JPEG without resizing.
+  ///
+  /// [pngBytes] - PNG encoded image data
+  /// [quality] - JPEG output quality (1-100, default 95)
+  ///
+  /// Returns JPEG encoded data.
+  /// Note: Alpha channel is discarded during conversion.
+  static Uint8List pngToJpeg({
+    required Uint8List pngBytes,
+    int quality = 95,
+  }) {
+    final inputPtr = calloc<Uint8>(pngBytes.length);
+    final outputDataPtr = calloc<Pointer<Uint8>>();
+    final outputSizePtr = calloc<Int32>();
+
+    try {
+      inputPtr.asTypedList(pngBytes.length).setAll(0, pngBytes);
+
+      final result = NativeBindings.instance.bicubicPngToJpeg(
+        inputPtr,
+        pngBytes.length,
+        quality,
+        outputDataPtr,
+        outputSizePtr,
+      );
+
+      _throwIfError(result);
+
+      final outputData = outputDataPtr.value;
+      final outputSize = outputSizePtr.value;
+
+      final resultBytes = Uint8List.fromList(
+        outputData.asTypedList(outputSize),
+      );
+
+      NativeBindings.instance.freeBuffer(outputData);
+
+      return resultBytes;
+    } finally {
+      calloc.free(inputPtr);
+      calloc.free(outputDataPtr);
+      calloc.free(outputSizePtr);
+    }
+  }
+
+  /// Convert between JPEG and PNG formats (auto-detect input).
+  ///
+  /// [bytes] - Image data (JPEG or PNG)
+  /// [targetFormat] - Desired output format
+  /// [quality] - JPEG quality (1-100, default 95). Used when target is JPEG.
+  /// [compressionLevel] - PNG compression (0-9, default 6). Used when target is PNG.
+  /// [applyExifOrientation] - Whether to apply EXIF orientation (default: true). JPEG input only.
+  ///
+  /// Returns converted image data. If input already matches [targetFormat],
+  /// the original bytes are returned unchanged.
+  static Uint8List convertFormat({
+    required Uint8List bytes,
+    required ImageFormat targetFormat,
+    int quality = 95,
+    int compressionLevel = 6,
+    bool applyExifOrientation = true,
+  }) {
+    final sourceFormat = detectFormat(bytes);
+    if (sourceFormat == null) {
+      throw UnsupportedImageFormatException(bytes: bytes);
+    }
+
+    if (sourceFormat == targetFormat) {
+      return bytes;
+    }
+
+    switch (targetFormat) {
+      case ImageFormat.png:
+        return jpegToPng(
+          jpegBytes: bytes,
+          compressionLevel: compressionLevel,
+          applyExifOrientation: applyExifOrientation,
+        );
+      case ImageFormat.jpeg:
+        return pngToJpeg(
+          pngBytes: bytes,
+          quality: quality,
+        );
+    }
+  }
+
+  /// Async version of [jpegToPng]. Runs in a separate isolate.
+  static Future<Uint8List> jpegToPngAsync({
+    required Uint8List jpegBytes,
+    int compressionLevel = 6,
+    bool applyExifOrientation = true,
+  }) {
+    return Isolate.run(
+      () => jpegToPng(
+        jpegBytes: jpegBytes,
+        compressionLevel: compressionLevel,
+        applyExifOrientation: applyExifOrientation,
+      ),
+    );
+  }
+
+  /// Async version of [pngToJpeg]. Runs in a separate isolate.
+  static Future<Uint8List> pngToJpegAsync({
+    required Uint8List pngBytes,
+    int quality = 95,
+  }) {
+    return Isolate.run(
+      () => pngToJpeg(pngBytes: pngBytes, quality: quality),
+    );
+  }
+
+  /// Async version of [convertFormat]. Runs in a separate isolate.
+  static Future<Uint8List> convertFormatAsync({
+    required Uint8List bytes,
+    required ImageFormat targetFormat,
+    int quality = 95,
+    int compressionLevel = 6,
+    bool applyExifOrientation = true,
+  }) {
+    return Isolate.run(
+      () => convertFormat(
+        bytes: bytes,
+        targetFormat: targetFormat,
+        quality: quality,
+        compressionLevel: compressionLevel,
+        applyExifOrientation: applyExifOrientation,
+      ),
+    );
   }
 
   // ============================================================================

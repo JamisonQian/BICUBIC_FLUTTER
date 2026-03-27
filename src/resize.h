@@ -23,6 +23,15 @@ extern "C" {
 #define BICUBIC_ERROR_DECODE_FAILED -3
 #define BICUBIC_ERROR_ALLOC_FAILED  -4
 #define BICUBIC_ERROR_ENCODE_FAILED -5
+#define BICUBIC_ERROR_FORMAT_UNKNOWN -6
+
+// ============================================================================
+// Image format detection
+// ============================================================================
+
+#define FORMAT_UNKNOWN 0
+#define FORMAT_JPEG    1
+#define FORMAT_PNG     2
 
 // ============================================================================
 // Filter types (matching stb_image_resize2 filters)
@@ -206,6 +215,52 @@ FFI_EXPORT int bicubic_resize_to_rgb(
     float aspect_h,
     int apply_exif,
     int is_jpeg,
+    uint8_t** output_data,
+    int* output_size
+);
+
+// ============================================================================
+// Image info (read dimensions/format without decoding pixels)
+// ============================================================================
+
+// Get image dimensions, channels, format and EXIF orientation without full decode
+// out_format: FORMAT_JPEG=1, FORMAT_PNG=2, FORMAT_UNKNOWN=0
+// out_orientation: EXIF orientation 1-8 (1=normal, JPEG only)
+// Returns BICUBIC_SUCCESS (0) on success, or a negative BICUBIC_ERROR_* code
+FFI_EXPORT int bicubic_get_image_info(
+    const uint8_t* input_data,
+    int input_size,
+    int* out_width,
+    int* out_height,
+    int* out_channels,
+    int* out_format,
+    int* out_orientation
+);
+
+// ============================================================================
+// Format conversion (decode -> encode in different format, no resize)
+// ============================================================================
+
+// Convert JPEG to PNG
+// compression_level: PNG compression 0-9 (default=6)
+// apply_exif: 1=apply EXIF orientation, 0=ignore
+// Returns BICUBIC_SUCCESS (0) on success, or a negative BICUBIC_ERROR_* code
+FFI_EXPORT int bicubic_jpeg_to_png(
+    const uint8_t* input_data,
+    int input_size,
+    int compression_level,
+    int apply_exif,
+    uint8_t** output_data,
+    int* output_size
+);
+
+// Convert PNG to JPEG
+// quality: JPEG quality 1-100
+// Returns BICUBIC_SUCCESS (0) on success, or a negative BICUBIC_ERROR_* code
+FFI_EXPORT int bicubic_png_to_jpeg(
+    const uint8_t* input_data,
+    int input_size,
+    int quality,
     uint8_t** output_data,
     int* output_size
 );

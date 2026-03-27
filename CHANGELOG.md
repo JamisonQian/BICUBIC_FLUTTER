@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.5.0] - 2026-03-27
+
+### Added
+- **`getImageInfo()`** — read image dimensions, format, channels, and EXIF orientation without decoding pixels
+  - `BicubicImageInfo` class with `width`, `height`, `channels`, `format`, `exifOrientation`
+  - Computed `orientedWidth`/`orientedHeight` for EXIF-corrected dimensions
+  - Async variant: `getImageInfoAsync()`
+- **`resizeFile()` / `resizeFileToFile()`** — File I/O convenience methods
+  - Read from file path, resize, and return bytes or save to output path
+  - Async variants: `resizeFileAsync()`, `resizeFileToFileAsync()`
+- **Format conversion** — JPEG↔PNG conversion without resizing
+  - `jpegToPng()` / `pngToJpeg()` — direct format conversion
+  - `convertFormat()` — auto-detect input and convert to target format
+  - Async variants: `jpegToPngAsync()`, `pngToJpegAsync()`, `convertFormatAsync()`
+- **`formatUnknown` error code** (-6) in `BicubicNativeError` for unknown/unsupported image formats
+
+### Changed
+- **Parameter validation in C layer** — out-of-range filter, edge mode, crop anchor, and aspect mode values are now clamped to safe defaults instead of causing undefined behavior
+- Updated `flutter_lints` from ^3.0.0 to ^4.0.0
+
 ## [1.4.0] - 2026-02-23
 
 ### Added

@@ -216,6 +216,7 @@ static float clamp_crop(float crop) {
 // ============================================================================
 
 static stbir_edge get_stbir_edge(int edge_mode) {
+    if (edge_mode < 0 || edge_mode > 3) edge_mode = EDGE_CLAMP;
     switch (edge_mode) {
         case EDGE_WRAP:
             return STBIR_EDGE_WRAP;
@@ -239,6 +240,8 @@ static void calc_crop(
     int* out_x, int* out_y, int* out_width, int* out_height
 ) {
     crop = clamp_crop(crop);
+    if (crop_anchor < 0 || crop_anchor > 8) crop_anchor = CROP_CENTER;
+    if (aspect_mode < 0 || aspect_mode > 2) aspect_mode = ASPECT_SQUARE;
 
     int crop_w, crop_h;
 
@@ -333,6 +336,7 @@ static void calc_crop(
 // ============================================================================
 
 static stbir_filter get_stbir_filter(int filter) {
+    if (filter < 0 || filter > 2) filter = FILTER_CATMULL_ROM;
     switch (filter) {
         case FILTER_CUBIC_BSPLINE:
             return STBIR_FILTER_CUBICBSPLINE;
@@ -802,6 +806,198 @@ FFI_EXPORT int bicubic_resize_to_rgb(
     // Return raw RGB data (no encoding)
     *output_data = dst_pixels;
     *output_size = rgb_size;
+
+    return BICUBIC_SUCCESS;
+}
+
+// ============================================================================
+// Image info (lightweight - no full pixel decode)
+// ============================================================================
+
+FFI_EXPORT int bicubic_get_image_info(
+    const uint8_t* input_data,
+    int input_size,
+    int* out_width,
+    int* out_height,
+    int* out_channels,
+    int* out_format,
+    int* out_orientation
+) {
+    if (input_data == NULL || out_width == NULL || out_height == NULL ||
+        out_channels == NULL || out_format == NULL || out_orientation == NULL) {
+        return BICUBIC_ERROR_NULL_INPUT;
+    }
+    if (input_size <= 0) {
+        return BICUBIC_ERROR_INVALID_DIMS;
+    }
+
+    // Detect format from magic bytes
+    int format = FORMAT_UNKNOWN;
+    if (input_size >= 3 && input_data[0] == 0xFF && input_data[1] == 0xD8 && input_data[2] == 0xFF) {
+        format = FORMAT_JPEG;
+    } else if (input_size >= 4 && input_data[0] == 0x89 && input_data[1] == 0x50 &&
+               input_data[2] == 0x4E && input_data[3] == 0x47) {
+        format = FORMAT_PNG;
+    }
+
+    if (format == FORMAT_UNKNOWN) {
+        *out_format = FORMAT_UNKNOWN;
+        return BICUBIC_ERROR_FORMAT_UNKNOWN;
+    }
+
+    // Use stbi_info_from_memory to get dimensions without full decode
+    int w, h, channels;
+    int ok = stbi_info_from_memory(input_data, input_size, &w, &h, &channels);
+    if (!ok) {
+        return BICUBIC_ERROR_DECODE_FAILED;
+    }
+
+    *out_width = w;
+    *out_height = h;
+    *out_channels = channels;
+    *out_format = format;
+
+    // Parse EXIF orientation (JPEG only)
+    if (format == FORMAT_JPEG) {
+        *out_orientation = parse_exif_orientation(input_data, input_size);
+    } else {
+        *out_orientation = 1;
+    }
+
+    return BICUBIC_SUCCESS;
+}
+
+// ============================================================================
+// Format conversion: JPEG -> PNG
+// ============================================================================
+
+FFI_EXPORT int bicubic_jpeg_to_png(
+    const uint8_t* input_data,
+    int input_size,
+    int compression_level,
+    int apply_exif,
+    uint8_t** output_data,
+    int* output_size
+) {
+    if (input_data == NULL || output_data == NULL || output_size == NULL) {
+        return BICUBIC_ERROR_NULL_INPUT;
+    }
+    if (input_size <= 0) {
+        return BICUBIC_ERROR_INVALID_DIMS;
+    }
+    if (compression_level < 0) compression_level = 0;
+    if (compression_level > 9) compression_level = 9;
+
+    // Parse EXIF orientation before decoding
+    int orientation = 1;
+    if (apply_exif) {
+        orientation = parse_exif_orientation(input_data, input_size);
+    }
+
+    // Decode JPEG to RGB
+    int width, height, channels;
+    uint8_t* pixels = stbi_load_from_memory(
+        input_data, input_size,
+        &width, &height, &channels,
+        3  // Force RGB
+    );
+    if (pixels == NULL) {
+        return BICUBIC_ERROR_DECODE_FAILED;
+    }
+
+    // Apply EXIF orientation
+    if (apply_exif) {
+        pixels = apply_orientation(pixels, &width, &height, 3, orientation);
+    }
+
+    // Set PNG compression level
+    stbi_write_png_compression_level = compression_level;
+
+    // Encode to PNG
+    WriteContext ctx;
+    ctx.capacity = width * height * 3 * 2;
+    ctx.size = 0;
+    ctx.data = (uint8_t*)malloc(ctx.capacity);
+    if (ctx.data == NULL) {
+        free(pixels);
+        return BICUBIC_ERROR_ALLOC_FAILED;
+    }
+
+    int result = stbi_write_png_to_func(
+        write_func, &ctx,
+        width, height, 3,
+        pixels, width * 3
+    );
+
+    free(pixels);
+
+    if (result == 0) {
+        free(ctx.data);
+        return BICUBIC_ERROR_ENCODE_FAILED;
+    }
+
+    *output_data = (uint8_t*)realloc(ctx.data, ctx.size);
+    *output_size = ctx.size;
+
+    return BICUBIC_SUCCESS;
+}
+
+// ============================================================================
+// Format conversion: PNG -> JPEG
+// ============================================================================
+
+FFI_EXPORT int bicubic_png_to_jpeg(
+    const uint8_t* input_data,
+    int input_size,
+    int quality,
+    uint8_t** output_data,
+    int* output_size
+) {
+    if (input_data == NULL || output_data == NULL || output_size == NULL) {
+        return BICUBIC_ERROR_NULL_INPUT;
+    }
+    if (input_size <= 0) {
+        return BICUBIC_ERROR_INVALID_DIMS;
+    }
+    if (quality < 1) quality = 1;
+    if (quality > 100) quality = 100;
+
+    // Decode PNG to RGB (discard alpha for JPEG)
+    int width, height, channels;
+    uint8_t* pixels = stbi_load_from_memory(
+        input_data, input_size,
+        &width, &height, &channels,
+        3  // Force RGB (drop alpha)
+    );
+    if (pixels == NULL) {
+        return BICUBIC_ERROR_DECODE_FAILED;
+    }
+
+    // Encode to JPEG
+    WriteContext ctx;
+    ctx.capacity = width * height * 3;
+    ctx.size = 0;
+    ctx.data = (uint8_t*)malloc(ctx.capacity);
+    if (ctx.data == NULL) {
+        free(pixels);
+        return BICUBIC_ERROR_ALLOC_FAILED;
+    }
+
+    int result = stbi_write_jpg_to_func(
+        write_func, &ctx,
+        width, height, 3,
+        pixels, quality
+    );
+
+    free(pixels);
+
+    if (result == 0) {
+        free(ctx.data);
+        return BICUBIC_ERROR_ENCODE_FAILED;
+    }
+
+    *output_data = (uint8_t*)realloc(ctx.data, ctx.size);
+    *output_size = ctx.size;
 
     return BICUBIC_SUCCESS;
 }
