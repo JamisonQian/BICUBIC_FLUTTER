@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.5.2] - 2026-04-07
+
+### Changed
+- Updated installation docs to ^1.5.2
+
 ## [1.5.1] - 2026-04-07
 
 ### Changed
