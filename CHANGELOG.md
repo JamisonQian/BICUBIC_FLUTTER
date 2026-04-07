@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.5.1] - 2026-04-07
+
+### Changed
+- Dart SDK constraint: `>=3.2.0 <4.0.0`
+- Flutter constraint: `>=3.16.0`
+- Android `compileSdk`: 33 → 35
+- Android Gradle Plugin: 7.4.2 → 8.7.3
+- iOS deployment target: 11.0 → 13.0
+- Modernized Gradle DSL (`compileSdkVersion` → `compileSdk`)
+
 ## [1.5.0] - 2026-03-27
 
 ### Added
