@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.5.3] - 2026-05-13
+
+### Changed
+- Replaced the deprecated `library flutter_bicubic_resize;` directive
+  with the modern unnamed `library;` declaration in the barrel file.
+- Removed unnecessary braces in two string interpolations in the example
+  app (`unnecessary_brace_in_string_interps` lint cleanup via
+  `dart fix --apply`). No production code changes.
+
 ## [1.5.2] - 2026-04-07
 
 ### Changed

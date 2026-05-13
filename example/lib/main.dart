@@ -185,7 +185,7 @@ class _ResizeDemoState extends State<ResizeDemo> {
     }
 
     final mean = sum / tensor.length;
-    return 'Shape: [${_outputHeight}, ${_outputWidth}, 3]\n'
+    return 'Shape: [$_outputHeight, $_outputWidth, 3]\n'
         'Size: ${tensor.length} floats (${tensor.length * 4} bytes)\n'
         'Min: ${min.toStringAsFixed(4)}\n'
         'Max: ${max.toStringAsFixed(4)}\n'

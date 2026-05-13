@@ -41,6 +41,6 @@
 ///
 /// See the [API documentation](https://github.com/erykkruk/BICUBIC_FLUTTER/blob/main/doc/api.md)
 /// for detailed usage information.
-library flutter_bicubic_resize;
+library;
 
 export 'src/bicubic_resizer.dart';
