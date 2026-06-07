@@ -4,7 +4,8 @@ import PackageDescription
 let package = Package(
     name: "flutter_bicubic_resize",
     platforms: [
-        .iOS("13.0")
+        .iOS("13.0"),
+        .macOS("10.15")
     ],
     products: [
         .library(name: "flutter-bicubic-resize", targets: ["flutter_bicubic_resize"])
