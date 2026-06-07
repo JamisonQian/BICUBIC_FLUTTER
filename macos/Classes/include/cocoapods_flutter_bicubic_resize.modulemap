@@ -1,0 +1,4 @@
+module flutter_bicubic_resize {
+  umbrella header "flutter_bicubic_resize/resize.h"
+  export *
+}

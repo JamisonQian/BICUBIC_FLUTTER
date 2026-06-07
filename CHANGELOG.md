@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.7.0] - 2026-06-07
+
+### Added
+- **macOS support.** The plugin now builds and links its native C code on
+  macOS, fixing `Failed to lookup symbol 'bicubic_resize_rgb'` (#3). Adds a
+  `macos/` podspec that reuses the shared cross-platform C sources and registers
+  `macos` as an FFI platform. The Dart loader already resolved symbols via
+  `DynamicLibrary.executable()` on macOS.
+
+### Changed
+- The Objective-C registrant now imports `FlutterMacOS` or `Flutter` depending
+  on the platform, so a single source file serves iOS and macOS.
+- `Package.swift` now also declares the `.macOS(10.15)` platform.
+
 ## [1.6.0] - 2026-06-07
 
 ### Added
