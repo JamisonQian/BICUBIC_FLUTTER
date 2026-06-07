@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.6.0] - 2026-06-07
+
+### Added
+- **Swift Package Manager support for iOS.** The plugin now ships a
+  `Package.swift` and an SPM-compatible source layout under
+  `ios/flutter_bicubic_resize/`, resolving the "does not support Swift Package
+  Manager" warning in recent Flutter versions (#4). CocoaPods remains supported
+  via the updated podspec pointing at the same sources.
+
+### Changed
+- Restructured the iOS native sources into
+  `ios/flutter_bicubic_resize/Sources/flutter_bicubic_resize/` with the public C
+  header exposed through an umbrella module map. The former Swift symbol-retention
+  registrant was rewritten in Objective-C so the C sources and registrant share a
+  single SPM target.
+- Raised the Android `compileSdk` to 36.
+- Raised the minimum SDK constraints to Dart `>=3.5.0` and Flutter `>=3.24.0`
+  (required for Swift Package Manager).
+
 ## [1.5.4] - 2026-06-07
 
 ### Added

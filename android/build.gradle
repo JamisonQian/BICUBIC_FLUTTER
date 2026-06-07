@@ -22,7 +22,7 @@ apply plugin: 'com.android.library'
 
 android {
     namespace 'tech.ravenlab.bicubic_flutter'
-    compileSdk 35
+    compileSdk 36
 
     defaultConfig {
         minSdk 21
