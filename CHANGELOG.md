@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.5.4] - 2026-06-07
+
+### Added
+- `ImageFormatX` extension exposing `mimeType` and `fileExtension` getters on
+  `ImageFormat`.
+
 ## [1.5.3] - 2026-05-13
 
 ### Changed

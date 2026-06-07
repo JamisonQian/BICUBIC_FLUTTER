@@ -71,6 +71,21 @@ enum ImageFormat {
   png,
 }
 
+/// Convenience metadata for [ImageFormat].
+extension ImageFormatX on ImageFormat {
+  /// The IANA MIME type for this format.
+  String get mimeType => switch (this) {
+        ImageFormat.jpeg => 'image/jpeg',
+        ImageFormat.png => 'image/png',
+      };
+
+  /// The common lowercase file extension (without leading dot).
+  String get fileExtension => switch (this) {
+        ImageFormat.jpeg => 'jpg',
+        ImageFormat.png => 'png',
+      };
+}
+
 /// Image metadata obtained without full pixel decoding.
 ///
 /// Contains dimensions, channel count, format, and EXIF orientation.
