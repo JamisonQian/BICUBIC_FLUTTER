@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.8.2] - 2026-07-10
+
+### Changed
+- pub.dev "Documentation" link now points to the hosted docs at
+  codigee.com/open-source/flutter-bicubic-resize.
+
 ## [1.8.1] - 2026-07-10
 
 ### Changed
