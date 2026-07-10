@@ -1181,5 +1181,149 @@ void main() {
     test('resizeForModelAsync exists', () {
       expect(BicubicResizer.resizeForModelAsync, isA<Function>());
     });
+
+    test('resizeToFit exists', () {
+      expect(BicubicResizer.resizeToFit, isA<Function>());
+    });
+
+    test('computeFitDimensions exists', () {
+      expect(BicubicResizer.computeFitDimensions, isA<Function>());
+    });
+  });
+
+  group('BicubicResizer - computeFitDimensions', () {
+    test('landscape image fits width, scales height proportionally', () {
+      final target = BicubicResizer.computeFitDimensions(
+        sourceWidth: 4000,
+        sourceHeight: 3000,
+        maxWidth: 1024,
+        maxHeight: 1024,
+      );
+
+      expect(target.width, equals(1024));
+      expect(target.height, equals(768));
+    });
+
+    test('portrait image fits height, scales width proportionally', () {
+      final target = BicubicResizer.computeFitDimensions(
+        sourceWidth: 3000,
+        sourceHeight: 4000,
+        maxWidth: 1024,
+        maxHeight: 1024,
+      );
+
+      expect(target.width, equals(768));
+      expect(target.height, equals(1024));
+    });
+
+    test('the limiting dimension is the smaller scale factor', () {
+      // 2000x1000 into 800x800: width scale 0.4, height scale 0.8 -> use 0.4.
+      final target = BicubicResizer.computeFitDimensions(
+        sourceWidth: 2000,
+        sourceHeight: 1000,
+        maxWidth: 800,
+        maxHeight: 800,
+      );
+
+      expect(target.width, equals(800));
+      expect(target.height, equals(400));
+    });
+
+    test('does not upscale by default when image already fits', () {
+      final target = BicubicResizer.computeFitDimensions(
+        sourceWidth: 300,
+        sourceHeight: 200,
+        maxWidth: 1024,
+        maxHeight: 1024,
+      );
+
+      expect(target.width, equals(300));
+      expect(target.height, equals(200));
+    });
+
+    test('upscales when allowUpscale is true', () {
+      final target = BicubicResizer.computeFitDimensions(
+        sourceWidth: 300,
+        sourceHeight: 200,
+        maxWidth: 1200,
+        maxHeight: 1200,
+        allowUpscale: true,
+      );
+
+      expect(target.width, equals(1200));
+      expect(target.height, equals(800));
+    });
+
+    test('preserves aspect ratio for square source and box', () {
+      final target = BicubicResizer.computeFitDimensions(
+        sourceWidth: 512,
+        sourceHeight: 512,
+        maxWidth: 256,
+        maxHeight: 256,
+      );
+
+      expect(target.width, equals(256));
+      expect(target.height, equals(256));
+    });
+
+    test('clamps computed dimensions to a minimum of 1', () {
+      // Extremely wide source into a tiny box would round height to 0.
+      final target = BicubicResizer.computeFitDimensions(
+        sourceWidth: 10000,
+        sourceHeight: 1,
+        maxWidth: 10,
+        maxHeight: 10,
+      );
+
+      expect(target.width, equals(10));
+      expect(target.height, equals(1));
+    });
+
+    test('throws ArgumentError for non-positive source dimensions', () {
+      expect(
+        () => BicubicResizer.computeFitDimensions(
+          sourceWidth: 0,
+          sourceHeight: 100,
+          maxWidth: 50,
+          maxHeight: 50,
+        ),
+        throwsArgumentError,
+      );
+    });
+
+    test('throws ArgumentError for non-positive max dimensions', () {
+      expect(
+        () => BicubicResizer.computeFitDimensions(
+          sourceWidth: 100,
+          sourceHeight: 100,
+          maxWidth: 0,
+          maxHeight: 50,
+        ),
+        throwsArgumentError,
+      );
+    });
+  });
+
+  group('BicubicDimensions', () {
+    test('value equality holds for identical dimensions', () {
+      const a = BicubicDimensions(width: 640, height: 480);
+      const b = BicubicDimensions(width: 640, height: 480);
+
+      expect(a, equals(b));
+      expect(a.hashCode, equals(b.hashCode));
+    });
+
+    test('differs when either dimension differs', () {
+      const a = BicubicDimensions(width: 640, height: 480);
+      const c = BicubicDimensions(width: 640, height: 481);
+
+      expect(a, isNot(equals(c)));
+    });
+
+    test('toString includes the WxH format', () {
+      const d = BicubicDimensions(width: 800, height: 600);
+
+      expect(d.toString(), contains('800x600'));
+    });
   });
 }

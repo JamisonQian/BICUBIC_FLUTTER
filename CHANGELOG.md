@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.8.0] - 2026-07-10
+
+### Added
+- **Aspect-ratio-preserving resize.** New `BicubicResizer.resizeToFit` scales an
+  image so it fits entirely within a `maxWidth` x `maxHeight` box without
+  distortion or cropping ("contain" scaling), computing the target dimensions
+  from the image's real size. Images smaller than the box are left untouched
+  unless `allowUpscale: true` is passed. EXIF orientation is respected by
+  default so the result never exceeds the box after rotation.
+- `BicubicResizer.computeFitDimensions`, a pure, decode-free helper that returns
+  the fitted `BicubicDimensions` for a source size and bounding box — usable on
+  any platform and independently of the native library.
+- `BicubicDimensions`, an immutable width/height pair with value equality.
+
 ## [1.7.0] - 2026-06-07
 
 ### Added

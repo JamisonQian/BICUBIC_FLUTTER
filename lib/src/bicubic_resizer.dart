@@ -1,6 +1,7 @@
 import 'dart:ffi';
 import 'dart:io';
 import 'dart:isolate';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
@@ -133,6 +134,30 @@ class BicubicImageInfo {
   @override
   String toString() => 'BicubicImageInfo(${width}x$height, channels=$channels, '
       'format=$format, exifOrientation=$exifOrientation)';
+}
+
+/// A pair of pixel dimensions returned by aspect-ratio-preserving helpers such
+/// as [BicubicResizer.computeFitDimensions].
+class BicubicDimensions {
+  /// Target width in pixels (always >= 1).
+  final int width;
+
+  /// Target height in pixels (always >= 1).
+  final int height;
+
+  const BicubicDimensions({required this.width, required this.height});
+
+  @override
+  bool operator ==(Object other) =>
+      other is BicubicDimensions &&
+      other.width == width &&
+      other.height == height;
+
+  @override
+  int get hashCode => Object.hash(width, height);
+
+  @override
+  String toString() => 'BicubicDimensions(${width}x$height)';
 }
 
 /// Exception thrown when an unsupported image format is detected.
@@ -734,6 +759,132 @@ class BicubicResizer {
           compressionLevel: compressionLevel,
         );
     }
+  }
+
+  // ============================================================================
+  // Aspect-ratio-preserving resize
+  // ============================================================================
+
+  /// Compute the largest [BicubicDimensions] that fits inside
+  /// [maxWidth] x [maxHeight] while preserving the aspect ratio of a
+  /// [sourceWidth] x [sourceHeight] image ("contain" scaling).
+  ///
+  /// This is a pure, dependency-free calculation — it performs no image
+  /// decoding — so it is safe to call on any platform and easy to unit test.
+  /// [BicubicResizer.resizeToFit] uses it internally after reading the source
+  /// dimensions with [getImageInfo].
+  ///
+  /// By default the image is never enlarged: if it already fits within the
+  /// bounds the original dimensions are returned. Pass [allowUpscale] `true`
+  /// to scale small images up to fill the bounds.
+  ///
+  /// Both returned dimensions are clamped to a minimum of `1` so the result is
+  /// always a valid, encodable size.
+  ///
+  /// ```dart
+  /// // A 4000x3000 photo constrained to a 1024x1024 box.
+  /// final target = BicubicResizer.computeFitDimensions(
+  ///   sourceWidth: 4000,
+  ///   sourceHeight: 3000,
+  ///   maxWidth: 1024,
+  ///   maxHeight: 1024,
+  /// );
+  /// // target == BicubicDimensions(1024x768)
+  /// ```
+  ///
+  /// Throws [ArgumentError] if any dimension is not positive.
+  static BicubicDimensions computeFitDimensions({
+    required int sourceWidth,
+    required int sourceHeight,
+    required int maxWidth,
+    required int maxHeight,
+    bool allowUpscale = false,
+  }) {
+    if (sourceWidth <= 0 || sourceHeight <= 0) {
+      throw ArgumentError(
+        'sourceWidth and sourceHeight must be positive, '
+        'got ${sourceWidth}x$sourceHeight',
+      );
+    }
+    if (maxWidth <= 0 || maxHeight <= 0) {
+      throw ArgumentError(
+        'maxWidth and maxHeight must be positive, got ${maxWidth}x$maxHeight',
+      );
+    }
+
+    var scale = math.min(maxWidth / sourceWidth, maxHeight / sourceHeight);
+    if (!allowUpscale && scale > 1.0) {
+      scale = 1.0;
+    }
+
+    final width = math.max(1, (sourceWidth * scale).round());
+    final height = math.max(1, (sourceHeight * scale).round());
+    return BicubicDimensions(width: width, height: height);
+  }
+
+  /// Resize an image so it fits entirely within [maxWidth] x [maxHeight] while
+  /// preserving its aspect ratio ("contain" scaling — no cropping, no
+  /// distortion).
+  ///
+  /// The source dimensions are read with [getImageInfo] (a header-only
+  /// operation) and the target size is computed by [computeFitDimensions],
+  /// then the actual resize is delegated to [resize]. This is a convenience
+  /// wrapper for the common thumbnail / preview case where you have a maximum
+  /// bounding box rather than exact output dimensions.
+  ///
+  /// When [applyExifOrientation] is `true` (the default) the fit is computed
+  /// against the EXIF-oriented dimensions, so the produced image never exceeds
+  /// the requested box after rotation.
+  ///
+  /// By default images smaller than the box are returned at their original
+  /// size; pass [allowUpscale] `true` to enlarge them.
+  ///
+  /// ```dart
+  /// final thumbnail = BicubicResizer.resizeToFit(
+  ///   bytes: photoBytes,
+  ///   maxWidth: 512,
+  ///   maxHeight: 512,
+  /// );
+  /// ```
+  ///
+  /// Throws [UnsupportedImageFormatException] if the format is not JPEG or PNG,
+  /// and [ArgumentError] if [maxWidth] or [maxHeight] is not positive.
+  ///
+  /// Returns resized image data in the same format as the input.
+  static Uint8List resizeToFit({
+    required Uint8List bytes,
+    required int maxWidth,
+    required int maxHeight,
+    bool allowUpscale = false,
+    int quality = 95,
+    int compressionLevel = 6,
+    BicubicFilter filter = BicubicFilter.catmullRom,
+    EdgeMode edgeMode = EdgeMode.clamp,
+    bool applyExifOrientation = true,
+  }) {
+    final info = getImageInfo(bytes);
+    final sourceWidth = applyExifOrientation ? info.orientedWidth : info.width;
+    final sourceHeight =
+        applyExifOrientation ? info.orientedHeight : info.height;
+
+    final target = computeFitDimensions(
+      sourceWidth: sourceWidth,
+      sourceHeight: sourceHeight,
+      maxWidth: maxWidth,
+      maxHeight: maxHeight,
+      allowUpscale: allowUpscale,
+    );
+
+    return resize(
+      bytes: bytes,
+      outputWidth: target.width,
+      outputHeight: target.height,
+      quality: quality,
+      compressionLevel: compressionLevel,
+      filter: filter,
+      edgeMode: edgeMode,
+      applyExifOrientation: applyExifOrientation,
+    );
   }
 
   // ============================================================================

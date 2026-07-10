@@ -247,6 +247,43 @@ Available layouts:
 - `TensorLayout.hwc` - Height, Width, Channels (TensorFlow/TFLite)
 - `TensorLayout.chw` - Channels, Height, Width (PyTorch)
 
+### Fit within bounds (preserve aspect ratio)
+
+Resize an image so it fits entirely inside a maximum bounding box without
+distortion or cropping. The output dimensions are computed for you from the
+image's real size, so you only supply the box:
+
+```dart
+// Produce a thumbnail no larger than 512x512, keeping the aspect ratio.
+final thumbnail = BicubicResizer.resizeToFit(
+  bytes: photoBytes,
+  maxWidth: 512,
+  maxHeight: 512,
+);
+
+// Images smaller than the box are returned untouched by default.
+// Pass allowUpscale: true to enlarge them to fill the box instead.
+final enlarged = BicubicResizer.resizeToFit(
+  bytes: iconBytes,
+  maxWidth: 1024,
+  maxHeight: 1024,
+  allowUpscale: true,
+);
+```
+
+Need only the target dimensions (e.g. to lay out a UI before resizing)? Use the
+pure, decode-free calculation directly:
+
+```dart
+final target = BicubicResizer.computeFitDimensions(
+  sourceWidth: 4000,
+  sourceHeight: 3000,
+  maxWidth: 1024,
+  maxHeight: 1024,
+);
+// target == BicubicDimensions(1024x768)
+```
+
 ### Get image info (without decoding)
 
 Read image dimensions, format, and EXIF orientation without decoding pixel data:
