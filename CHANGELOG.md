@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.8.1] - 2026-07-10
+
+### Changed
+- Documentation: hosted docs at codigee.com/open-source/flutter-bicubic-resize
+  (overview, API reference, advanced usage).
+- README now links the hosted documentation and points the API reference at the
+  hosted page, keeping `doc/api.md` as the markdown source.
+
 ## [1.8.0] - 2026-07-10
 
 ### Added

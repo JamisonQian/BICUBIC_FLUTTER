@@ -2,6 +2,14 @@
 
 **Fastest image resize, crop and compress for Flutter.** 3-4x faster than other libraries. Created and supported by [Codigee](https://codigee.com).
 
+## Documentation
+
+Full hosted documentation lives on codigee.com:
+
+- **[Overview](https://codigee.com/open-source/flutter-bicubic-resize)** — what the package does, benchmarks, and quick start.
+- **[API reference](https://codigee.com/open-source/flutter-bicubic-resize/api)** — every method, parameter, and error code (also available as [markdown source](doc/api.md)).
+- **[Advanced usage](https://codigee.com/open-source/flutter-bicubic-resize/advanced)** — crop anchors, edge modes, ML preprocessing, and format conversion.
+
 ## Features
 
 - **3-4x faster** than other Flutter image libraries (pure native C pipeline)
@@ -29,7 +37,7 @@ Add to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  flutter_bicubic_resize: ^1.5.3
+  flutter_bicubic_resize: ^1.8.1
 ```
 
 Or run:
@@ -472,10 +480,9 @@ Perfect for ML preprocessing (OpenCLIP, ResNet, etc.) where consistent results w
 
 **[CODIGEE.COM](https://codigee.com)**
 
-## Documentation
+## Example
 
-- [API Reference](doc/api.md) - Complete API documentation
-- [Example App](example/) - Working demo application
+- [Example App](example/) - Working demo application. Full API docs are linked in [Documentation](#documentation) above.
 
 ## License
 
