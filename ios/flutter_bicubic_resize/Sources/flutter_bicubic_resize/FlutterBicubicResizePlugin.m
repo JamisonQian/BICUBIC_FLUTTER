@@ -43,7 +43,7 @@
   // PNG: filter, edge_mode, crop, crop_anchor, aspect_mode, aspect_w, aspect_h, compression_level
   (void)bicubic_resize_png(dummyInput, 0, 0, 0, 0, 0, 1.0f, 0, 0, 1.0f, 1.0f, 6, &outPtr, &outSize);
 
-  free_buffer(NULL);
+  bicubic_free_buffer(NULL);
 }
 
 @end

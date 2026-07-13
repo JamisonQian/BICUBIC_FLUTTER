@@ -270,7 +270,7 @@ FFI_EXPORT int bicubic_png_to_jpeg(
 // ============================================================================
 
 // Free buffer allocated by resize functions
-FFI_EXPORT void free_buffer(uint8_t* buffer);
+FFI_EXPORT void bicubic_free_buffer(uint8_t* buffer);
 
 #ifdef __cplusplus
 }

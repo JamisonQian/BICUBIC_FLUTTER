@@ -1006,7 +1006,7 @@ FFI_EXPORT int bicubic_png_to_jpeg(
 // Memory management
 // ============================================================================
 
-FFI_EXPORT void free_buffer(uint8_t* buffer) {
+FFI_EXPORT void bicubic_free_buffer(uint8_t* buffer) {
     if (buffer != NULL) {
         free(buffer);
     }

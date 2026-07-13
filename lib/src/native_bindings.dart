@@ -346,7 +346,7 @@ class NativeBindings {
 
     // Memory management
     freeBuffer = _library
-        .lookup<NativeFunction<FreeBufferNative>>('free_buffer')
+        .lookup<NativeFunction<FreeBufferNative>>('bicubic_free_buffer')
         .asFunction<FreeBufferDart>();
   }
 }
